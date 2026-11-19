@@ -5,6 +5,9 @@
 Akarumi Before Edit/
 Akarumi After Edit/
 
+# Local scratch (spec drafts before they land on the issue tracker)
+.scratch/
+
 # Tool output artifacts
 Renamed/
 rename-log.csv
