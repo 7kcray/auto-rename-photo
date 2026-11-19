@@ -90,7 +90,7 @@ python -m autorename --port 9000 --no-browser
 
 ## 已知限制与路线图
 
-- **同批撞名编号未做**：同一台机器、同一类别的多张图会拼出相同目标名，后落盘的在日志里记为「冲突」。对应 issue #6，`tests/test_plan.py` 里已有先行写好的用例。
+- **同批撞名编号未做**：同一台机器、同一类别的多张图会拼出相同目标名，后落盘的在日志里记为「冲突」。对应 issue #6。
 - **重跑幂等未做**：同一批重跑会产生一批「冲突」记录，尚未按文件大小跳过（issue #7）。
 - **实拍整批验收待做**：目前靠录制的 OCR 样本测试，12 张真图的整批比对还没跑（issue #8）。
 - 只有 Windows 版；OCR 与 `.bat` 启动器都依赖 Windows。
@@ -101,7 +101,7 @@ python -m autorename --port 9000 --no-browser
 python -m unittest discover -s tests -t .
 ```
 
-99 个用例，其中 1 个红——`test_three_images_from_one_machine_and_category_are_numbered_from_the_second`，是 issue #6 的 TDD 用例，功能尚未实现。
+98 个用例，全部通过。OCR 在测试里一律喂 `tests/fixtures/ocr_texts.json` 里录好的真实文本，不跑真引擎。
 
 ```
 autorename/
