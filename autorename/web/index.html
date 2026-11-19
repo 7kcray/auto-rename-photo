@@ -454,6 +454,14 @@
     categorySelect.title = "类别";
     categorySelect.appendChild(option(config.undecided, config.undecided));
     config.categories.forEach((category) => categorySelect.appendChild(option(category, category)));
+    // 预判只是替人先填一格：判不出的留在「未定」，照样可以改。
+    if (config.categories.includes(image.predicted_category)) {
+      categorySelect.value = image.predicted_category;
+      categorySelect.title = "类别 · OCR 预判为 " + image.predicted_category + "，不对就改";
+    }
+    if (image.ocr_text) {
+      categorySelect.title += "\n\nOCR 读到的文字：\n" + image.ocr_text.slice(0, 600);
+    }
 
     const envSelect = document.createElement("select");
     envSelect.title = "ENV";
@@ -511,7 +519,7 @@
     }
 
     scanButton.disabled = true;
-    setStatus("正在扫描…");
+    setStatus("正在扫描并识别…");
     try {
       const response = await fetch("/api/scan?directory=" + encodeURIComponent(directory));
       const payload = await response.json();
@@ -520,7 +528,15 @@
         return;
       }
       render(payload);
-      setStatus("已列出 " + payload.count + " 张：" + payload.directory);
+      if (payload.ocr_warning) {
+        setStatus(payload.ocr_warning, "warn");
+        return;
+      }
+      const predicted = payload.images.filter(
+        (image) => image.compliant && image.predicted_category && image.predicted_category !== config.undecided
+      ).length;
+      const tail = predicted ? "，其中 " + predicted + " 张类别已预判，核对后点 ENV" : "";
+      setStatus("已列出 " + payload.count + " 张" + tail + "：" + payload.directory);
     } catch (error) {
       setStatus("扫描失败：" + error.message, "error");
     } finally {

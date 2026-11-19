@@ -13,6 +13,7 @@ from autorename import config, state
 from autorename.executor import TargetUnusable, apply_plan
 from autorename.naming import TEMPLATE, default_target_directory
 from autorename.nameparse import PNG_EXTENSION
+from autorename.ocr import OcrProvider
 from autorename.plan import Decision, plan_batch
 from autorename.scanner import DirectoryUnusable, scan_directory
 from autorename.vocabulary import CATEGORIES, UNDECIDED
@@ -21,10 +22,12 @@ LOOPBACK = "127.0.0.1"
 _WEB_ROOT = Path(__file__).parent / "web"
 _MAX_BODY_BYTES = 4 * 1024 * 1024
 _LOCAL_HOSTS = ("127.0.0.1", "localhost")
+_OCR_UNAVAILABLE = "这批图一个字都没读出来，类别全部落在「未定」——OCR 可能不可用，请逐张手点。"
 
 
 class ToolRequestHandler(BaseHTTPRequestHandler):
     initial_directory: str | None = None
+    ocr_provider: OcrProvider | None = None
     protocol_version = "HTTP/1.1"
 
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler 的接口
@@ -92,7 +95,7 @@ class ToolRequestHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            result = scan_directory(directory)
+            result = scan_directory(directory, self.ocr_provider)
         except DirectoryUnusable as error:
             self._send_error_json(str(error))
             return
@@ -100,6 +103,7 @@ class ToolRequestHandler(BaseHTTPRequestHandler):
         state.save_last_directory(result.directory)
         payload = result.to_payload()
         payload["default_target_directory"] = default_target_directory(result.directory)
+        payload["ocr_warning"] = _ocr_warning(result, self.ocr_provider)
         self._send_json(payload)
 
     def _handle_rename(self) -> None:
@@ -219,6 +223,15 @@ def _decisions_from(raw: object) -> list[Decision]:
     return decisions
 
 
+def _ocr_warning(result, provider: OcrProvider | None) -> str | None:
+    """OCR 跑过却一张都没读出字：多半是引擎不可用，说一句比默默全红好。"""
+    if provider is None or result.compliant_count == 0:
+        return None
+    if any(image.ocr_text.strip() for image in result.images):
+        return None
+    return _OCR_UNAVAILABLE
+
+
 def _resolve_image(directory: str, filename: str) -> Path | None:
     """只认「扫描目录 + 纯文件名」，把路径穿越挡在外面。"""
     if not directory or not filename:
@@ -232,11 +245,14 @@ def _resolve_image(directory: str, filename: str) -> Path | None:
     return path
 
 
-def create_server(port: int, initial_directory: str | None) -> ThreadingHTTPServer:
-    """把 initial_directory 绑到一个一次性子类上——基类构造函数不收额外参数。"""
+def create_server(
+    port: int, initial_directory: str | None, ocr: OcrProvider | None = None
+) -> ThreadingHTTPServer:
+    """把 initial_directory 与 OCR 提供者绑到一个一次性子类上——基类构造函数不收额外参数。"""
 
     class BoundHandler(ToolRequestHandler):
         pass
 
     BoundHandler.initial_directory = initial_directory
+    BoundHandler.ocr_provider = ocr
     return ThreadingHTTPServer((LOOPBACK, port), BoundHandler)

@@ -7,6 +7,7 @@ import webbrowser
 from http.server import ThreadingHTTPServer
 
 from autorename import config, state
+from autorename.ocr import WindowsOcr
 from autorename.server import create_server
 
 DEFAULT_PORT = 8765
@@ -23,7 +24,7 @@ def main() -> int:
 
     initial_directory = args.directory or os.environ.get(_DIRECTORY_ENV) or state.load_last_directory()
     config.ensure_default_config()
-    server = _bind(args.port, initial_directory)
+    server = _bind(args.port, initial_directory, WindowsOcr())
     url = f"http://127.0.0.1:{server.server_address[1]}/"
 
     print(f"工具页已启动：{url}")
@@ -41,17 +42,17 @@ def main() -> int:
     return 0
 
 
-def _bind(preferred_port: int, initial_directory: str | None) -> ThreadingHTTPServer:
+def _bind(preferred_port: int, initial_directory: str | None, ocr: WindowsOcr) -> ThreadingHTTPServer:
     """端口被占就往后找，都不行再退回系统分配。"""
     last_error: OSError | None = None
     for port in range(preferred_port, preferred_port + _PORT_ATTEMPTS):
         try:
-            return create_server(port, initial_directory)
+            return create_server(port, initial_directory, ocr)
         except OSError as error:
             last_error = error
 
     try:
-        return create_server(0, initial_directory)
+        return create_server(0, initial_directory, ocr)
     except OSError as error:
         raise SystemExit(f"起不了本地服务：{error or last_error}") from error
 
