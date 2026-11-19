@@ -1,0 +1,15 @@
+# Agent runtime state / memory (local only)
+.workbuddy-ai/
+
+# Sample screenshot sets kept on disk as run evidence, not versioned
+Akarumi Before Edit/
+Akarumi After Edit/
+
+# Tool output artifacts
+Renamed/
+rename-log.csv
+
+# Python
+__pycache__/
+*.pyc
+.venv/
