@@ -830,7 +830,8 @@
       }
 
       const parts = ["已落盘 " + payload.copied + " 张"];
-      if (payload.conflicts) parts.push("冲突 " + payload.conflicts + " 张（目标已存在，没覆盖）");
+      if (payload.skipped) parts.push("跳过 " + payload.skipped + " 张（目标已存在且大小相同）");
+      if (payload.conflicts) parts.push("冲突 " + payload.conflicts + " 张（目标已存在但大小不同，没覆盖）");
       if (payload.failed) parts.push("失败 " + payload.failed + " 张");
       if (payload.blocked.length) parts.push("挡住 " + payload.blocked.length + " 张");
       const clean = payload.conflicts === 0 && payload.failed === 0;

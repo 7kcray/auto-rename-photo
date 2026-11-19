@@ -66,20 +66,29 @@ class CopyTest(ExecutorTestCase):
 
 
 class SourceStaysReadOnlyTest(ExecutorTestCase):
-    def test_source_names_count_and_mtime_are_untouched(self):
-        self.make_source(CONFIRMED, UNDECIDED, BROKEN)
-        before = {
+    def snapshot_source(self) -> dict[str, tuple[int, int]]:
+        return {
             path.name: (path.stat().st_size, path.stat().st_mtime_ns)
             for path in self.source.glob("*.png")
         }
+
+    def test_source_names_count_and_mtime_are_untouched(self):
+        self.make_source(CONFIRMED, UNDECIDED, BROKEN)
+        before = self.snapshot_source()
 
         self.run_batch([Decision(CONFIRMED, env="Server", category="Spec")])
 
-        after = {
-            path.name: (path.stat().st_size, path.stat().st_mtime_ns)
-            for path in self.source.glob("*.png")
-        }
-        self.assertEqual(after, before)
+        self.assertEqual(self.snapshot_source(), before)
+
+    def test_source_names_count_and_mtime_survive_a_rerun_too(self):
+        self.make_source(CONFIRMED, UNDECIDED, BROKEN)
+        before = self.snapshot_source()
+        decisions = [Decision(CONFIRMED, env="Server", category="Spec")]
+
+        self.run_batch(decisions)
+        self.run_batch(decisions)
+
+        self.assertEqual(self.snapshot_source(), before)
 
     def test_no_target_file_is_written_next_to_the_originals(self):
         self.make_source(CONFIRMED)
@@ -141,19 +150,90 @@ class PartialBatchTest(ExecutorTestCase):
 
 
 class ExistingTargetTest(ExecutorTestCase):
-    def test_existing_target_is_left_alone_and_logged_as_a_conflict(self):
+    def test_existing_target_with_a_different_size_is_left_alone_and_logged_as_a_conflict(self):
+        """大小对不上就是别人的文件：不跳过（那是谎报已落好），也不覆盖。"""
         self.make_source(CONFIRMED)
         decision = [Decision(CONFIRMED, env="Server", category="Spec")]
         self.run_batch(decision)
-        copied = self.target / "(Server)82331647_TCSB2-Spec.png"
-        copied.write_bytes(b"x" * copied.stat().st_size)
-        marker = copied.stat().st_mtime_ns
+        landed = self.target / "(Server)82331647_TCSB2-Spec.png"
+        landed.write_bytes(b"x")
+        marker = landed.stat().st_mtime_ns
 
         result = self.run_batch(decision)
 
         self.assertEqual(result.conflicts, 1)
-        self.assertEqual(copied.stat().st_mtime_ns, marker)
+        self.assertEqual(result.skipped, 0)
+        self.assertEqual(result.copied, 0)
+        self.assertEqual(landed.stat().st_mtime_ns, marker)
+        self.assertEqual(landed.read_bytes(), b"x")
         self.assertEqual(self.log_rows()[-1]["状态"], "冲突")
+
+
+class RerunTest(ExecutorTestCase):
+    """同一批重跑：已落好的图不该再复制一遍，也不该在日志里越堆越多。"""
+
+    def test_same_size_target_is_skipped_instead_of_copied_again(self):
+        self.make_source(CONFIRMED)
+        decision = [Decision(CONFIRMED, env="Server", category="Spec")]
+        self.run_batch(decision)
+        landed = self.target / "(Server)82331647_TCSB2-Spec.png"
+        marker = landed.stat().st_mtime_ns
+
+        result = self.run_batch(decision)
+
+        self.assertEqual(result.skipped, 1)
+        self.assertEqual(result.copied, 0)
+        self.assertEqual(landed.stat().st_mtime_ns, marker)
+        self.assertEqual(self.target_names(), ["(Server)82331647_TCSB2-Spec.png"])
+
+    def test_the_skip_is_logged_once_however_many_times_the_batch_is_rerun(self):
+        self.make_source(CONFIRMED)
+        decision = [Decision(CONFIRMED, env="Server", category="Spec")]
+
+        self.run_batch(decision)
+        self.run_batch(decision)
+        self.run_batch(decision)
+
+        self.assertEqual([row["状态"] for row in self.log_rows()], ["已复制", "跳过"])
+
+    def test_refilling_a_deleted_file_is_logged_again(self):
+        """补回一张图是这一遍真干的事，日志得留下这一次，不能因为首跑记过就吞掉。"""
+        self.make_source(CONFIRMED)
+        decision = [Decision(CONFIRMED, env="Server", category="Spec")]
+        self.run_batch(decision)
+        (self.target / "(Server)82331647_TCSB2-Spec.png").unlink()
+
+        self.run_batch(decision)
+
+        self.assertEqual([row["状态"] for row in self.log_rows()], ["已复制", "已复制"])
+
+    def test_deleting_two_landed_files_and_rerunning_only_refills_those_two(self):
+        names = (
+            "82331647_TCSB218112026_111024.png",
+            "82331647_TCSB218112026_111027.png",
+            "82331647_TCSB218112026_111030.png",
+        )
+        self.make_source(*names)
+        decisions = [Decision(name, env="Server", category="Spec") for name in names]
+        self.run_batch(decisions)
+        (self.target / "(Server)82331647_TCSB2-Spec-2.png").unlink()
+        (self.target / "(Server)82331647_TCSB2-Spec.png").unlink()
+
+        result = self.run_batch(decisions)
+
+        self.assertEqual(result.copied, 2)
+        self.assertEqual(result.skipped, 1)
+        self.assertEqual(
+            self.target_names(),
+            [
+                "(Server)82331647_TCSB2-Spec-2.png",
+                "(Server)82331647_TCSB2-Spec-3.png",
+                "(Server)82331647_TCSB2-Spec.png",
+            ],
+        )
+        statuses = [row["状态"] for row in self.log_rows()]
+        self.assertEqual(statuses.count("已复制"), 5)
+        self.assertEqual(statuses.count("跳过"), 1)
 
 
 class DuplicateNameTest(ExecutorTestCase):
