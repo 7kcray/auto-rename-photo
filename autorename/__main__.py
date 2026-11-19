@@ -6,7 +6,7 @@ import threading
 import webbrowser
 from http.server import ThreadingHTTPServer
 
-from autorename import state
+from autorename import config, state
 from autorename.server import create_server
 
 DEFAULT_PORT = 8765
@@ -22,6 +22,7 @@ def main() -> int:
     args = parser.parse_args()
 
     initial_directory = args.directory or os.environ.get(_DIRECTORY_ENV) or state.load_last_directory()
+    config.ensure_default_config()
     server = _bind(args.port, initial_directory)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
 

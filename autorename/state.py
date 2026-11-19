@@ -5,9 +5,14 @@ import os
 from pathlib import Path
 
 
-def state_file_path() -> Path:
+def app_data_dir() -> Path:
+    """本机用户级的配置目录：state.json 和 config.json 都放这儿。"""
     base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), ".local", "share")
-    return Path(base) / "AutoRenamePhoto" / "state.json"
+    return Path(base) / "AutoRenamePhoto"
+
+
+def state_file_path() -> Path:
+    return app_data_dir() / "state.json"
 
 
 def load_last_directory() -> str | None:
