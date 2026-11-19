@@ -14,7 +14,7 @@ from autorename.executor import TargetUnusable, apply_plan
 from autorename.naming import TEMPLATE, default_target_directory
 from autorename.nameparse import PNG_EXTENSION
 from autorename.ocr import OcrProvider
-from autorename.plan import Decision, plan_batch
+from autorename.plan import Decision, Plan, plan_batch
 from autorename.scanner import DirectoryUnusable, scan_directory
 from autorename.vocabulary import CATEGORIES, UNDECIDED
 
@@ -54,16 +54,19 @@ class ToolRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler 的接口
         route = urlparse(self.path).path
-        if route != "/api/rename":
+        if route not in ("/api/rename", "/api/preview"):
             self._send_error_page(404, "没有这个页面")
             return
 
         if not self._accepts_this_request():
-            # 落盘会写文件：只认本工具页面自己发来的 JSON 请求。
+            # 这两个接口都读本机文件：只认本工具页面自己发来的 JSON 请求。
             self._send_error_json("只接受本机页面的请求", status=403)
             return
 
-        self._handle_rename()
+        if route == "/api/preview":
+            self._handle_preview()
+        else:
+            self._handle_rename()
 
     def _accepts_this_request(self) -> bool:
         content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
@@ -109,26 +112,34 @@ class ToolRequestHandler(BaseHTTPRequestHandler):
         payload["ocr_warning"] = _ocr_warning(result, self.ocr_provider)
         self._send_json(payload)
 
+    def _handle_preview(self) -> None:
+        """只算名字、不落盘：页面上的预览与落盘共用同一个计划器，规则不会分叉。"""
+        body = self._read_json()
+        if body is None:
+            return
+
+        plan = self._plan_from(body)
+        if plan is None:
+            return
+
+        self._send_json(
+            {
+                "ready": [
+                    {"source": copy.source_filename, "target": copy.target_name}
+                    for copy in plan.ready
+                ]
+            }
+        )
+
     def _handle_rename(self) -> None:
         body = self._read_json()
         if body is None:
             return
 
-        directory = _text(body.get("directory"))
-        if not directory:
-            self._send_error_json("先给一个截图目录")
+        plan = self._plan_from(body)
+        if plan is None:
             return
 
-        try:
-            scan = scan_directory(directory)
-        except DirectoryUnusable as error:
-            self._send_error_json(str(error))
-            return
-
-        target_directory = _absolute(_text(body.get("target_directory"))) or default_target_directory(
-            scan.directory
-        )
-        plan = plan_batch(scan, _decisions_from(body.get("decisions")), target_directory)
         try:
             result = apply_plan(plan)
         except TargetUnusable as error:
@@ -136,6 +147,24 @@ class ToolRequestHandler(BaseHTTPRequestHandler):
             return
 
         self._send_json(result.to_payload())
+
+    def _plan_from(self, body: dict) -> Plan | None:
+        """页面来的请求 → 计划。缺目录或目录读不了时已经回过错误，返回 None。"""
+        directory = _text(body.get("directory"))
+        if not directory:
+            self._send_error_json("先给一个截图目录")
+            return None
+
+        try:
+            scan = scan_directory(directory)
+        except DirectoryUnusable as error:
+            self._send_error_json(str(error))
+            return None
+
+        target_directory = _absolute(_text(body.get("target_directory"))) or default_target_directory(
+            scan.directory
+        )
+        return plan_batch(scan, _decisions_from(body.get("decisions")), target_directory)
 
     def _handle_image(self, query: dict[str, list[str]]) -> None:
         path = _resolve_image(_first(query, "directory"), _first(query, "filename"))

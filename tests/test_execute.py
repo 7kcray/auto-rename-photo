@@ -155,22 +155,54 @@ class ExistingTargetTest(ExecutorTestCase):
         self.assertEqual(copied.stat().st_mtime_ns, marker)
         self.assertEqual(self.log_rows()[-1]["状态"], "冲突")
 
-    def test_two_images_that_would_share_a_name_do_not_silently_drop_one(self):
-        """防撞名编号是后面的事；这一版只保证不静默覆盖、且冲突看得见。"""
-        first = "82331647_TCSB218112026_111024.png"
-        second = "82331647_TCSB218112026_111025.png"
-        self.make_source(first, second)
 
-        result = self.run_batch(
+class DuplicateNameTest(ExecutorTestCase):
+    """同机同类多张：实拍样本里没有重复，这里全靠构造的 fixture。"""
+
+    FIRST = "82331647_TCSB218112026_111024.png"
+    SECOND = "82331647_TCSB218112026_111027.png"
+    THIRD = "82331647_TCSB218112026_111030.png"
+
+    def decide_all(self) -> list[Decision]:
+        return [
+            Decision(name, env="Server", category="Spec")
+            for name in (self.FIRST, self.SECOND, self.THIRD)
+        ]
+
+    def test_three_images_from_one_machine_and_category_land_as_three_files(self):
+        self.make_source(self.FIRST, self.SECOND, self.THIRD)
+
+        result = self.run_batch(self.decide_all())
+
+        self.assertEqual(
+            self.target_names(),
             [
-                Decision(first, env="Server", category="Spec"),
-                Decision(second, env="Server", category="Spec"),
-            ]
+                "(Server)82331647_TCSB2-Spec-2.png",
+                "(Server)82331647_TCSB2-Spec-3.png",
+                "(Server)82331647_TCSB2-Spec.png",
+            ],
         )
+        self.assertEqual(result.copied, 3)
+        self.assertEqual(result.conflicts, 0)
 
-        self.assertEqual(result.copied, 1)
-        self.assertEqual(result.conflicts, 1)
-        self.assertEqual(len(self.target_names()), 1)
+    def test_no_two_files_in_the_target_directory_overwrite_each_other(self):
+        self.make_source(self.FIRST, self.SECOND, self.THIRD)
+
+        self.run_batch(self.decide_all())
+
+        bodies = [path.read_bytes() for path in self.target.glob("*.png")]
+        self.assertEqual(len(bodies), 3)
+        self.assertEqual(len(set(bodies)), 3)
+
+    def test_changing_a_file_mtime_does_not_move_its_number(self):
+        """编号只认文件名里的时间片段：mtime 改成最新的那张仍然是首张。"""
+        self.make_source(self.FIRST, self.SECOND, self.THIRD)
+        os.utime(self.source / self.FIRST, (2_000_000_000, 2_000_000_000))
+
+        self.run_batch(self.decide_all())
+
+        first = self.target / "(Server)82331647_TCSB2-Spec.png"
+        self.assertEqual(first.read_bytes(), (self.source / self.FIRST).read_bytes())
 
 
 class TargetDirectoryTest(ExecutorTestCase):

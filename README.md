@@ -43,6 +43,9 @@ python -m autorename --port 9000 --no-browser
 - **ENV** 统一写成 `Server`、`Link1` 这种「首字母大写、其余小写」，配置里写错大小写也进不了文件名。
 - **类别** 是封闭词表，只有七个：`Analyse`、`Data`、`Group`、`Main`、`Spec`、`Test`、`Version`。判不准就是 `未定`，不会出现 `Database`、`Goup` 这类同义异名。
 - **数字与 PCNAME** 默认取自文件名，组头选定机器后以机器登记为准。
+- **同机同类多张**时按时间片段升序排号：首张是 `…-类别.png`，第二张起 `…-类别-2.png`、`…-类别-3.png`。编号只为防撞名，不表达顺序语义——改文件 mtime 不会改变谁拿 `-2`；不同机器、不同类别、不同 ENV 各自独立编号。
+
+页面上的预览名走 `/api/preview`，与落盘共用同一个计划器，所以预览里带 `-2` 的那一行，落盘就是 `-2`。
 
 原文件名形如 `82331647_TCSB218112026_111024.png`，三段以 `_` 分隔：
 
@@ -90,7 +93,6 @@ python -m autorename --port 9000 --no-browser
 
 ## 已知限制与路线图
 
-- **同批撞名编号未做**：同一台机器、同一类别的多张图会拼出相同目标名，后落盘的在日志里记为「冲突」。对应 issue #6。
 - **重跑幂等未做**：同一批重跑会产生一批「冲突」记录，尚未按文件大小跳过（issue #7）。
 - **实拍整批验收待做**：目前靠录制的 OCR 样本测试，12 张真图的整批比对还没跑（issue #8）。
 - 只有 Windows 版；OCR 与 `.bat` 启动器都依赖 Windows。
@@ -101,7 +103,7 @@ python -m autorename --port 9000 --no-browser
 python -m unittest discover -s tests -t .
 ```
 
-98 个用例，全部通过。OCR 在测试里一律喂 `tests/fixtures/ocr_texts.json` 里录好的真实文本，不跑真引擎。
+109 个用例，全部通过。OCR 在测试里一律喂 `tests/fixtures/ocr_texts.json` 里录好的真实文本，不跑真引擎。
 
 ```
 autorename/

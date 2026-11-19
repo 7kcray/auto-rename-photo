@@ -118,6 +118,98 @@ class BlockedImageTest(unittest.TestCase):
         self.assertEqual(plan.blocked[0].reason, "文件名不合规")
 
 
+class CollisionNumberingTest(unittest.TestCase):
+    """同机同类多张：首张不带数字后缀，第二张起 `-2`、`-3`，互不覆盖。"""
+
+    FIRST = "82331647_TCSB218112026_111024.png"
+    SECOND = "82331647_TCSB218112026_111027.png"
+    THIRD = "82331647_TCSB218112026_111030.png"
+
+    def test_three_images_from_one_machine_and_category_are_numbered_from_the_second(self):
+        plan = plan_batch(
+            _scan(self.FIRST, self.SECOND, self.THIRD),
+            [
+                Decision(self.FIRST, env="Server", category="Spec"),
+                Decision(self.SECOND, env="Server", category="Spec"),
+                Decision(self.THIRD, env="Server", category="Spec"),
+            ],
+            TARGET,
+        )
+
+        self.assertEqual(
+            [copy.target_name for copy in plan.ready],
+            [
+                "(Server)82331647_TCSB2-Spec.png",
+                "(Server)82331647_TCSB2-Spec-2.png",
+                "(Server)82331647_TCSB2-Spec-3.png",
+            ],
+        )
+
+    def test_the_suffix_follows_the_time_fragment_not_the_order_they_were_listed(self):
+        """编号只为防撞名，不表达顺序语义：排序只认文件名里的时间片段。"""
+        plan = plan_batch(
+            _scan(self.THIRD, self.FIRST, self.SECOND),
+            [
+                Decision(self.FIRST, env="Server", category="Spec"),
+                Decision(self.SECOND, env="Server", category="Spec"),
+                Decision(self.THIRD, env="Server", category="Spec"),
+            ],
+            TARGET,
+        )
+
+        by_source = {copy.source_filename: copy.target_name for copy in plan.ready}
+        self.assertEqual(by_source[self.FIRST], "(Server)82331647_TCSB2-Spec.png")
+        self.assertEqual(by_source[self.SECOND], "(Server)82331647_TCSB2-Spec-2.png")
+        self.assertEqual(by_source[self.THIRD], "(Server)82331647_TCSB2-Spec-3.png")
+
+    def test_two_machines_do_not_share_a_counter(self):
+        other_machine = "82331648_TCSB318112026_111024.png"
+        plan = plan_batch(
+            _scan(self.FIRST, other_machine),
+            [
+                Decision(self.FIRST, env="Server", category="Spec"),
+                Decision(other_machine, env="Server", category="Spec"),
+            ],
+            TARGET,
+        )
+
+        self.assertEqual(
+            [copy.target_name for copy in plan.ready],
+            ["(Server)82331647_TCSB2-Spec.png", "(Server)82331648_TCSB3-Spec.png"],
+        )
+
+    def test_two_categories_of_one_machine_do_not_share_a_counter(self):
+        plan = plan_batch(
+            _scan(self.FIRST, self.SECOND),
+            [
+                Decision(self.FIRST, env="Server", category="Spec"),
+                Decision(self.SECOND, env="Server", category="Data"),
+            ],
+            TARGET,
+        )
+
+        self.assertEqual(
+            [copy.target_name for copy in plan.ready],
+            ["(Server)82331647_TCSB2-Spec.png", "(Server)82331647_TCSB2-Data.png"],
+        )
+
+    def test_two_envs_of_one_machine_and_category_do_not_share_a_counter(self):
+        """ENV 写在名字最前面：`(Server)…-Spec` 与 `(Link1)…-Spec` 本来就不撞名。"""
+        plan = plan_batch(
+            _scan(self.FIRST, self.SECOND),
+            [
+                Decision(self.FIRST, env="Server", category="Spec"),
+                Decision(self.SECOND, env="Link1", category="Spec"),
+            ],
+            TARGET,
+        )
+
+        self.assertEqual(
+            [copy.target_name for copy in plan.ready],
+            ["(Server)82331647_TCSB2-Spec.png", "(Link1)82331647_TCSB2-Spec.png"],
+        )
+
+
 class MixedBatchTest(unittest.TestCase):
     def test_undecided_rows_do_not_stop_the_confirmed_ones(self):
         plan = plan_batch(

@@ -374,6 +374,10 @@
   let records = [];
   let machines = [];
   let targetDirty = false;
+  let previewNames = new Map();
+  let previewTimer = null;
+  let previewTicket = 0;
+  const PREVIEW_DELAY_MS = 80;
 
   function setStatus(message, kind) {
     statusLine.textContent = message || "";
@@ -423,10 +427,65 @@
       .replace("{category}", category);
   }
 
+  // 预览与落盘送同一份决定：两边各拼一份，迟早会分叉。
+  function currentDecisions() {
+    return records.map((record) => {
+      const machine = record.group.machine;
+      return {
+        filename: record.image.filename,
+        env: record.envSelect.value,
+        category: record.categorySelect.value,
+        pcname: machine ? machine.pcname : "",
+        number: machine ? machine.number : "",
+      };
+    });
+  }
+
   function isReady(record) {
     return record.image.compliant &&
       record.envSelect.value !== "" &&
       record.categorySelect.value !== config.undecided;
+  }
+
+  // 撞名编号由服务端算（同机同类第二张起 -2、-3）：页面不另抄一份规则，
+  // 只把服务端算好的名字盖在模板名上。回包没到之前先显示模板名。
+  function refreshAll() {
+    // 一改动旧编号就作废：宁可先显示模板名，也不让上一次的 -2 挂在错的行上。
+    // ticket 一起抬，已经在飞的旧回包回来也对不上号，会被丢掉。
+    previewTicket += 1;
+    previewNames = new Map();
+    records.forEach((record) => refresh(record));
+    schedulePreview();
+  }
+
+  // 连续点下拉时只发最后一次：预览比落盘更频繁，不必每一下都问服务端。
+  function schedulePreview() {
+    if (previewTimer !== null) clearTimeout(previewTimer);
+    previewTimer = setTimeout(requestPreview, PREVIEW_DELAY_MS);
+  }
+
+  async function requestPreview() {
+    previewTimer = null;
+    if (!currentDirectory || !records.length) return;
+
+    const ticket = ++previewTicket;
+    const decisions = currentDecisions();
+
+    try {
+      const response = await fetch("/api/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ directory: currentDirectory, decisions }),
+      });
+      if (!response.ok) return;
+      const payload = await response.json();
+      // 慢回包晚到就丢掉：只认最后一次点击算出来的名字。
+      if (ticket !== previewTicket) return;
+      previewNames = new Map(payload.ready.map((item) => [item.source, item.target]));
+      records.forEach((record) => refresh(record));
+    } catch (error) {
+      // 预览拿不到不该打断核对：退回模板名，落盘时服务端仍会自己算一遍。
+    }
   }
 
   function refresh(record) {
@@ -441,7 +500,7 @@
     arrow.textContent = "→";
     const to = document.createElement("span");
     to.className = "to";
-    to.textContent = targetName(record);
+    to.textContent = previewNames.get(record.image.filename) || targetName(record);
     record.preview.replaceChildren(from, arrow, to);
     record.preview.className = "preview" + (ready ? " ready" : "");
 
@@ -592,8 +651,8 @@
       numberValue: numberChip.querySelector("b"),
       pcnameValue: pcnameChip.querySelector("b"),
     };
-    categorySelect.addEventListener("change", () => refresh(record));
-    envSelect.addEventListener("change", () => refresh(record));
+    categorySelect.addEventListener("change", refreshAll);
+    envSelect.addEventListener("change", refreshAll);
     return { card, record };
   }
 
@@ -661,7 +720,7 @@
       select.addEventListener("change", () => {
         group.machine = select.value === "" ? null : machines[Number(select.value)];
         updateGroupHead(group);
-        group.records.forEach(refresh);
+        refreshAll();
       });
 
       side.appendChild(select);
@@ -702,7 +761,7 @@
       built.group.records.forEach((record) => records.push(record));
     });
 
-    records.forEach(refresh);
+    refreshAll();
 
     if (!targetDirty) {
       targetInput.value = payload.default_target_directory || "";
@@ -750,16 +809,7 @@
   }
 
   async function apply() {
-    const decisions = records.map((record) => {
-      const machine = record.group.machine;
-      return {
-        filename: record.image.filename,
-        env: record.envSelect.value,
-        category: record.categorySelect.value,
-        pcname: machine ? machine.pcname : "",
-        number: machine ? machine.number : "",
-      };
-    });
+    const decisions = currentDecisions();
 
     applyButton.disabled = true;
     setStatus("正在落盘…");

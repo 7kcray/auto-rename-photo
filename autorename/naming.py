@@ -26,6 +26,16 @@ def build_target_name(number: str, pcname: str, env: str, category: str) -> str:
     return TEMPLATE.format(env=env_text, number=number, pcname=pcname, category=category)
 
 
+def with_sequence(target_name: str, rank: int) -> str:
+    """同机同类的第几张：首张原样，第二张起在类别后面加 `-2`、`-3`。
+
+    编号只为防撞名，不表达顺序语义——`-2` 不代表「后拍的」，只代表「同名的第二张」。
+    """
+    if rank <= 1:
+        return target_name
+    return f"{target_name[: -len(PNG_EXTENSION)]}-{rank}{PNG_EXTENSION}"
+
+
 def default_target_directory(source_directory: str) -> str:
     """默认落盘目录是源目录下的 `Renamed/`。"""
     return os.path.join(source_directory, TARGET_DIRECTORY_NAME)
