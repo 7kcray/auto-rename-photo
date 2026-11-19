@@ -1,0 +1,2 @@
+# cmd.exe needs CRLF in .bat files; keep the launcher double-clickable everywhere.
+*.bat text eol=crlf

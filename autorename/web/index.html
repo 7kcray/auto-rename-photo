@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>截图批量重命名</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-hover: #1c212a;
+    --line: #262b36;
+    --text: #e6e9ef;
+    --muted: #8b93a7;
+    --accent: #4c8dff;
+    --danger: #ff5c5c;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 22px 28px 0;
+  }
+
+  h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: .2px; }
+
+  .subtitle { color: var(--muted); font-size: 12px; }
+
+  .count {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .count b { color: var(--text); font-size: 15px; }
+  .count .warn { color: var(--danger); }
+
+  .pathbar {
+    display: flex;
+    gap: 10px;
+    padding: 16px 28px 0;
+  }
+
+  .pathbar input {
+    flex: 1;
+    min-width: 0;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 12px;
+    outline: none;
+  }
+
+  .pathbar input:focus { border-color: var(--accent); }
+  .pathbar input::placeholder { color: #5d6474; }
+
+  button {
+    background: var(--accent);
+    border: 0;
+    border-radius: 8px;
+    color: #fff;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    padding: 10px 18px;
+  }
+
+  button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .5; cursor: default; }
+
+  .status {
+    padding: 10px 28px 0;
+    min-height: 22px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .status.error { color: var(--danger); }
+
+  main { padding: 6px 28px 40px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 14px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .card:hover { border-color: #3a4250; }
+
+  .card.invalid { border-color: rgba(255, 92, 92, .5); }
+
+  .thumb {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #0b0d11;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    cursor: zoom-in;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top left;
+    display: block;
+  }
+
+  .meta { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+
+  .filename {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    word-break: break-all;
+    line-height: 1.4;
+  }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .chip {
+    background: #11141a;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 2px 7px;
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .chip b {
+    color: var(--text);
+    font-family: var(--mono);
+    font-weight: 600;
+    margin-left: 5px;
+  }
+
+  .badge {
+    align-self: flex-start;
+    background: rgba(255, 92, 92, .12);
+    border: 1px solid rgba(255, 92, 92, .45);
+    border-radius: 6px;
+    color: var(--danger);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+  }
+
+  .empty {
+    color: var(--muted);
+    border: 1px dashed var(--line);
+    border-radius: 10px;
+    padding: 40px;
+    text-align: center;
+  }
+
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    background: rgba(4, 6, 9, .92);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 12px;
+    padding: 24px;
+    cursor: zoom-out;
+    z-index: 10;
+  }
+
+  .lightbox.open { display: flex; }
+
+  .lightbox img {
+    max-width: 100%;
+    max-height: calc(100vh - 90px);
+    object-fit: contain;
+    border-radius: 6px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, .6);
+  }
+
+  .lightbox .caption {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--muted);
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>截图批量重命名</h1>
+  <span class="subtitle">本机运行 · 不联网 · 原目录只读</span>
+  <span class="count" id="count"></span>
+</header>
+
+<div class="pathbar">
+  <input id="path" type="text" spellcheck="false" placeholder="粘贴截图目录，例如 C:\Shots 或 \\TCSR2\Shots（也可以把文件夹拖到 .bat 上）">
+  <button id="scan">扫描</button>
+</div>
+
+<div class="status" id="status"></div>
+
+<main>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty">给一个截图目录，这里会把里面的 PNG 全列出来。</div>
+</main>
+
+<div class="lightbox" id="lightbox">
+  <img id="lightbox-image" alt="">
+  <div class="caption" id="lightbox-caption"></div>
+</div>
+
+<script>
+  const pathInput = document.getElementById("path");
+  const scanButton = document.getElementById("scan");
+  const statusLine = document.getElementById("status");
+  const grid = document.getElementById("grid");
+  const empty = document.getElementById("empty");
+  const countLine = document.getElementById("count");
+  const lightbox = document.getElementById("lightbox");
+  const lightboxImage = document.getElementById("lightbox-image");
+  const lightboxCaption = document.getElementById("lightbox-caption");
+
+  let currentDirectory = "";
+
+  function setStatus(message, isError) {
+    statusLine.textContent = message || "";
+    statusLine.className = isError ? "status error" : "status";
+  }
+
+  function imageUrl(directory, filename) {
+    return "/api/image?directory=" + encodeURIComponent(directory) +
+      "&filename=" + encodeURIComponent(filename);
+  }
+
+  function chip(label, value) {
+    const span = document.createElement("span");
+    span.className = "chip";
+    span.textContent = label;
+    const strong = document.createElement("b");
+    strong.textContent = value;
+    span.appendChild(strong);
+    return span;
+  }
+
+  function renderCard(image, directory) {
+    const card = document.createElement("div");
+    card.className = image.compliant ? "card" : "card invalid";
+
+    const thumb = document.createElement("button");
+    thumb.className = "thumb";
+    thumb.title = "看大图";
+    const img = document.createElement("img");
+    img.loading = "lazy";
+    img.alt = image.filename;
+    img.src = imageUrl(directory, image.filename);
+    thumb.appendChild(img);
+    thumb.addEventListener("click", () => openLightbox(img.src, image.filename));
+    card.appendChild(thumb);
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+
+    const name = document.createElement("div");
+    name.className = "filename";
+    name.textContent = image.filename;
+    meta.appendChild(name);
+
+    if (image.compliant) {
+      const chips = document.createElement("div");
+      chips.className = "chips";
+      chips.appendChild(chip("数字", image.number));
+      chips.appendChild(chip("PCNAME", image.pcname));
+      chips.appendChild(chip("时间", image.time_fragment));
+      meta.appendChild(chips);
+    } else {
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = "不合规";
+      meta.appendChild(badge);
+    }
+
+    card.appendChild(meta);
+    return card;
+  }
+
+  function render(payload) {
+    currentDirectory = payload.directory;
+    grid.replaceChildren();
+    payload.images.forEach((image) => grid.appendChild(renderCard(image, payload.directory)));
+
+    empty.style.display = payload.count ? "none" : "block";
+    if (!payload.count) {
+      empty.textContent = "这个目录里没有 PNG。";
+    }
+
+    const total = payload.count;
+    const bad = payload.non_compliant_count;
+    countLine.innerHTML = "本批 <b>" + total + "</b> 张" +
+      (bad ? " · <span class='warn'>" + bad + " 张不合规</span>" : "");
+  }
+
+  async function scan() {
+    const directory = pathInput.value.trim();
+    if (!directory) {
+      setStatus("先填一个截图目录。", true);
+      pathInput.focus();
+      return;
+    }
+
+    scanButton.disabled = true;
+    setStatus("正在扫描…");
+    try {
+      const response = await fetch("/api/scan?directory=" + encodeURIComponent(directory));
+      const payload = await response.json();
+      if (!response.ok) {
+        setStatus(payload.error || "扫描失败", true);
+        return;
+      }
+      render(payload);
+      setStatus("已列出 " + payload.count + " 张：" + payload.directory);
+    } catch (error) {
+      setStatus("扫描失败：" + error.message, true);
+    } finally {
+      scanButton.disabled = false;
+    }
+  }
+
+  function openLightbox(src, filename) {
+    lightboxImage.src = src;
+    lightboxImage.alt = filename;
+    lightboxCaption.textContent = filename;
+    lightbox.classList.add("open");
+  }
+
+  function closeLightbox() {
+    lightbox.classList.remove("open");
+    lightboxImage.removeAttribute("src");
+  }
+
+  lightbox.addEventListener("click", closeLightbox);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") closeLightbox();
+  });
+
+  scanButton.addEventListener("click", scan);
+  pathInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") scan();
+  });
+
+  (async function boot() {
+    try {
+      const response = await fetch("/api/state");
+      const payload = await response.json();
+      const startDirectory = payload.initial_directory || payload.last_directory;
+      if (startDirectory) {
+        pathInput.value = startDirectory;
+        scan();
+      }
+    } catch (error) {
+      setStatus("读不到上次的目录，手动填一个即可。", true);
+    }
+  })();
+</script>
+</body>
+</html>
