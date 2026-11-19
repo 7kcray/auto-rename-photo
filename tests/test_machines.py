@@ -1,6 +1,6 @@
 r"""机器登记：从本地配置读「顾客 → 机器」，以及从 OCR 文本看出的 ENV 线索。
 
-每台机器带 PCNAME、数字，和一个用于匹配 UNC 前缀的机器名（`hostname` 缺省就是
+每台机器带 PCNAME、Ultraviewer ID，和一个用于匹配 UNC 前缀的机器名（`hostname` 缺省就是
 PCNAME）。配置缺失或格式坏掉时给出能读懂的一句话，不崩整批：本批的图全归到
 「未登记」，ENV 照常逐张点。
 
@@ -36,8 +36,8 @@ def _registry(*machines: Machine) -> MachineRegistry:
 
 
 AKARUMI = _registry(
-    Machine(customer="Akarumi", label="Server", pcname="TCSB2", number="82331647", hostname="TCSB2"),
-    Machine(customer="Akarumi", label="Link1", pcname="BB", number="82335369", hostname="BB"),
+    Machine(customer="Akarumi", label="Server", pcname="TCSB2", ultraviewer_id="82331647", hostname="TCSB2"),
+    Machine(customer="Akarumi", label="Link1", pcname="BB", ultraviewer_id="82335369", hostname="BB"),
 )
 
 
@@ -57,8 +57,8 @@ class RegistryFromConfigTest(unittest.TestCase):
                     {
                         "name": "Akarumi",
                         "machines": [
-                            {"label": "Server", "pcname": "TCSB2", "number": "82331647", "hostname": "TCSR2"},
-                            {"label": "Link1", "pcname": "BB", "number": 82335369},
+                            {"label": "Server", "pcname": "TCSB2", "ultraviewer_id": "82331647", "hostname": "TCSR2"},
+                            {"label": "Link1", "pcname": "BB", "ultraviewer_id": 82335369},
                         ],
                     }
                 ]
@@ -71,10 +71,10 @@ class RegistryFromConfigTest(unittest.TestCase):
         self.assertEqual([machine.customer for machine in registry.machines], ["Akarumi", "Akarumi"])
         self.assertEqual([machine.label for machine in registry.machines], ["Server", "Link1"])
         self.assertEqual(registry.machines[0].hostname, "TCSR2")
-        self.assertEqual(registry.machines[1].number, "82335369")
+        self.assertEqual(registry.machines[1].ultraviewer_id, "82335369")
 
     def test_hostname_falls_back_to_pcname(self):
-        self._write({"customers": [{"name": "A", "machines": [{"pcname": "TCSB2", "number": "1"}]}]})
+        self._write({"customers": [{"name": "A", "machines": [{"pcname": "TCSB2", "ultraviewer_id": "1"}]}]})
 
         machine = load_registry(self.path).machines[0]
 
@@ -111,8 +111,8 @@ class RegistryFromConfigTest(unittest.TestCase):
                     {
                         "name": "Akarumi",
                         "machines": [
-                            {"label": "没有数字", "pcname": "X"},
-                            {"label": "好的", "pcname": "BB", "number": "82335369"},
+                            {"label": "没有 ID", "pcname": "X"},
+                            {"label": "好的", "pcname": "BB", "ultraviewer_id": "82335369"},
                             "这不是一台机器",
                         ],
                     }
@@ -133,6 +133,26 @@ class RegistryFromConfigTest(unittest.TestCase):
         self.assertEqual(registry.machines, ())
         self.assertTrue(registry.warning)
 
+    def test_the_old_number_key_is_not_read_as_an_ultraviewer_id(self):
+        """旧配置里这一项叫 `number`：本版不认，宁可直说没登记，也不静默退回文件名取值。"""
+        self._write(
+            {
+                "customers": [
+                    {
+                        "name": "Akarumi",
+                        "machines": [
+                            {"label": "Server", "pcname": "TCSB2", "number": "82331647"},
+                        ],
+                    }
+                ]
+            }
+        )
+
+        registry = load_registry(self.path)
+
+        self.assertEqual(registry.machines, ())
+        self.assertIn("没有可用的「顾客 → 机器」登记", registry.warning)
+
 
 class DefaultConfigTest(unittest.TestCase):
     def test_the_written_template_is_already_a_usable_registry(self):
@@ -149,14 +169,14 @@ class DefaultConfigTest(unittest.TestCase):
 
 
 class FindMachineTest(unittest.TestCase):
-    def test_number_and_pcname_find_the_machine(self):
+    def test_ultraviewer_id_and_pcname_find_the_machine(self):
         self.assertEqual(AKARUMI.find("TCSB2", "82331647").label, "Server")
 
     def test_pcname_is_matched_case_insensitively(self):
         self.assertEqual(AKARUMI.find("tcsb2", "82331647").label, "Server")
 
-    def test_a_new_number_does_not_borrow_another_machines_identity(self):
-        """数字是机器身份的一部分：对不上就是没登记，不能拿登记的数字顶替。"""
+    def test_a_new_id_does_not_borrow_another_machines_identity(self):
+        """ID 是机器身份的一部分：对不上就是没登记，不能拿登记的 ID 顶替。"""
         self.assertIsNone(AKARUMI.find("BB", "99999999"))
 
     def test_unknown_pcname_finds_nothing(self):

@@ -3,7 +3,7 @@
 默认给 `Server` 与 `Link1`…`Link3`。本批有几条链路，就在 `config.json` 的 `envs` 里
 加几个（`Link4`、`Link5`…），下次扫描即生效。
 
-`customers` 是本机的机器登记：每个顾客下面列几台机器，每台带 `pcname`、`number`
+`customers` 是本机的机器登记：每个顾客下面列几台机器，每台带 `pcname`、`ultraviewer_id`
 和可选的 `hostname`（UNC 里出现的机器名，缺省等于 PCNAME）。第一次运行会写一份
 带 Akarumi 示例的模板，照着自己的顾客改即可；本版没有增删改界面。
 
@@ -27,8 +27,8 @@ SAMPLE_CUSTOMERS = (
     {
         "name": "Akarumi",
         "machines": (
-            {"label": "Server", "pcname": "TCSB2", "number": "82331647", "hostname": "TCSB2"},
-            {"label": "Link1", "pcname": "BB", "number": "82335369", "hostname": "BB"},
+            {"label": "Server", "pcname": "TCSB2", "ultraviewer_id": "82331647", "hostname": "TCSB2"},
+            {"label": "Link1", "pcname": "BB", "ultraviewer_id": "82335369", "hostname": "BB"},
         ),
     },
 )

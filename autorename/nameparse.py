@@ -1,8 +1,8 @@
-"""名称解析：系统生成的截图文件名 → 数字、PCNAME、时间片段。
+"""名称解析：系统生成的截图文件名 → Ultraviewer ID、PCNAME、时间片段。
 
 文件名形如 `82331647_TCSB218112026_111024.png`，三段以 `_` 分隔：
 
-- 数字：系统给的一串数字，屏幕上不存在，只能从文件名解。
+- Ultraviewer ID：系统给的一串数字，屏幕上不存在，只能从文件名解。
 - PCNAME + 日期：`TCSB2` + `18112026`（DDMMYYYY），日期段丢弃。
 - 时间片段：`HHMMSS`，但时/分/秒三段都不补零，拼成一串——任一段小于 10 时
   那一位的 0 就没了。所以 5 位片段既可能是秒丢了 0（`11156` = 11:15:06），
@@ -13,6 +13,8 @@
 
 from dataclasses import dataclass
 
+from autorename.vocabulary import is_ultraviewer_id
+
 PNG_EXTENSION = ".png"
 
 
@@ -20,7 +22,7 @@ PNG_EXTENSION = ".png"
 class ParsedName:
     """一个合规文件名的解析结果。时间同时给原始片段和补零后的钟点。"""
 
-    number: str
+    ultraviewer_id: str
     pcname: str
     time_fragment: str
     hour: int
@@ -47,9 +49,10 @@ def parse_filename(filename: str) -> ParsedName | None:
     if len(parts) != 3:
         return None
 
-    number, machine_and_date, time_fragment = parts
+    ultraviewer_id, machine_and_date, time_fragment = parts
 
-    if not number.isdigit():
+    # 只认 ASCII 数字：全角 ID 会解析成「合规」，页面上却没有输入框可改，就成了死路。
+    if not is_ultraviewer_id(ultraviewer_id):
         return None
 
     pcname = _pcname_of(machine_and_date)
@@ -62,7 +65,7 @@ def parse_filename(filename: str) -> ParsedName | None:
 
     hour, minute, second = clock
     return ParsedName(
-        number=number,
+        ultraviewer_id=ultraviewer_id,
         pcname=pcname,
         time_fragment=time_fragment,
         hour=hour,

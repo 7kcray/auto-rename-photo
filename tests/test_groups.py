@@ -22,8 +22,8 @@ SERVER_TEXT = "C:\\eStream\\SQLAccounting\\Share\\Default.DCF"
 
 REGISTRY = MachineRegistry(
     machines=(
-        Machine(customer="Akarumi", label="Server", pcname="TCSB2", number="82331647", hostname="TCSB2"),
-        Machine(customer="Akarumi", label="Link1", pcname="BB", number="82335369", hostname="BB"),
+        Machine(customer="Akarumi", label="Server", pcname="TCSB2", ultraviewer_id="82331647", hostname="TCSB2"),
+        Machine(customer="Akarumi", label="Link1", pcname="BB", ultraviewer_id="82335369", hostname="BB"),
     ),
     path="C:/config.json",
 )
@@ -56,17 +56,17 @@ class GroupingTest(unittest.TestCase):
         self.assertEqual(group.label, "未登记")
         self.assertEqual(group.customer, "")
         self.assertEqual(group.pcname, "ZZ")
-        self.assertEqual(group.number, "99999999")
+        self.assertEqual(group.ultraviewer_id, "99999999")
 
-    def test_a_known_pcname_with_another_number_stays_unregistered(self):
-        """数字对不上就不认这台机器，免得拿登记的数字悄悄改掉文件名里的。"""
+    def test_a_known_pcname_with_another_id_stays_unregistered(self):
+        """ID 对不上就不认这台机器，免得拿登记的 ID 悄悄改掉文件名里的。"""
         other = _image("88888888_BB18112026_111042.png")
 
         groups = group_images([other], REGISTRY)
 
         self.assertFalse(groups[0].registered)
         self.assertEqual(groups[0].pcname, "BB")
-        self.assertEqual(groups[0].number, "88888888")
+        self.assertEqual(groups[0].ultraviewer_id, "88888888")
 
     def test_non_compliant_images_form_their_own_trailing_group(self):
         groups = group_images([_image(BROKEN_IMAGE), _image(SERVER_IMAGE)], REGISTRY)
@@ -93,7 +93,7 @@ class BatchPayloadTest(unittest.TestCase):
         self.assertEqual(len(payload["groups"]), 2)
         self.assertEqual(len(payload["machines"]), 2)
         self.assertEqual(payload["groups"][0]["pcname"], "TCSB2")
-        self.assertEqual(payload["groups"][0]["number"], "82331647")
+        self.assertEqual(payload["groups"][0]["ultraviewer_id"], "82331647")
         self.assertEqual(payload["groups"][0]["machine_index"], 0)
         self.assertEqual(payload["groups"][1]["machine_index"], 1)
         self.assertEqual(payload["groups"][0]["images"], [SERVER_IMAGE])
@@ -111,6 +111,32 @@ class BatchPayloadTest(unittest.TestCase):
         payload = build_payload(_scan(_image(CLIENT_IMAGE, CLIENT_TEXT)), REGISTRY)
 
         self.assertNotIn("env", payload["images"][0])
+
+    def test_the_non_compliant_group_is_flagged_for_the_page(self):
+        """页面靠这个标记决定组头要不要配机器下拉、计数按哪一套文案算。"""
+        payload = build_payload(_scan(_image(SERVER_IMAGE), _image(BROKEN_IMAGE)), REGISTRY)
+
+        flags = {group["label"]: group["non_compliant"] for group in payload["groups"]}
+
+        self.assertEqual(flags, {"Server": False, "不合规": True})
+
+    def test_the_machine_list_spans_every_customer_for_the_non_compliant_group(self):
+        """不合规组没有顾客归属：组头下拉得能选到任何顾客名下的机器。"""
+        two_customers = MachineRegistry(
+            machines=(
+                Machine(customer="Akarumi", label="Server", pcname="TCSB2", ultraviewer_id="82331647", hostname="TCSB2"),
+                Machine(customer="Bakery", label="Link1", pcname="BB", ultraviewer_id="82335369", hostname="BB"),
+            ),
+            path="C:/config.json",
+        )
+
+        payload = build_payload(_scan(_image(BROKEN_IMAGE)), two_customers)
+
+        self.assertEqual(payload["groups"][0]["label"], "不合规")
+        self.assertEqual(
+            [(machine["customer"], machine["label"]) for machine in payload["machines"]],
+            [("Akarumi", "Server"), ("Bakery", "Link1")],
+        )
 
     def test_broken_config_warning_travels_with_the_payload(self):
         broken = MachineRegistry(path="C:/config.json", warning="机器登记读不了：C:/config.json")

@@ -43,6 +43,10 @@ class MalformedNameTest(unittest.TestCase):
         self.assertIsNone(parse_filename("82331647_TCSB218112026_156.png"))
         self.assertIsNone(parse_filename("82331647_TCSB218112026_1115.png"))
 
+    def test_a_full_width_id_is_not_compliant_so_it_can_still_be_filled_in(self):
+        """`isdigit()` 放行全角数字，但它进不了文件名：当成合规就会变成没有输入框的死路。"""
+        self.assertIsNone(parse_filename("８２３３１６４７_TCSB218112026_111024.png"))
+
 
 if __name__ == "__main__":
     unittest.main()

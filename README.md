@@ -28,24 +28,27 @@ python -m autorename --port 9000 --no-browser
 
 ## 使用流程
 
-1. **扫描**：列出目录下所有 PNG，解析文件名里的数字、PCNAME、时间，并调 Windows 内置 OCR 预判类别。
+1. **扫描**：列出目录下所有 PNG，解析文件名里的 Ultraviewer ID、PCNAME、时间，并调 Windows 内置 OCR 预判类别。
 2. **核对**：图按机器分组，组头标明顾客与机器；每张图两个下拉——类别（OCR 预判可改）和 ENV。ENV 旁会提示「疑似服务器 / 疑似客户端」，但**不预填**，点哪一格由人决定。
+
+   文件名不合规的图单独一组，卡片上多一个 Ultraviewer ID 输入框。填上纯数字的 ID、在组头选一台机器（或让 ID 命中登记机器自动带出 PCNAME）、再点类别和 ENV，它就和别的图一样能落盘；不填就一直挡着，只影响它自己。
 3. **落盘**：点「落盘」，图被复制到落盘目录（默认 `<源目录>\Renamed`），同时写 `rename-log.csv`。
 
 重跑同一批是安全的：目标目录里已存在且大小相同的图直接跳过，只补缺的那几张。日志里重复的「跳过」只记一行，重跑再多遍也不会越堆越长；补回来的图照实再记一行「已复制」，这一遍干了什么日志里查得到。
 
-类别未定、ENV 未选、文件名不合规的图会被挡住，只影响它自己，不拖累整批。
+类别未定、ENV 未选、缺 ID 或缺 PCNAME 的图会被挡住，只影响它自己，不拖累整批。挡住的原因逐项列在回包里，缺什么补什么。
 
 ## 命名规则
 
 ```
-(ENV)数字_PCNAME-类别.png
+(ENV)<Ultraviewer ID>_PCNAME-类别.png
 ```
 
 - **ENV** 统一写成 `Server`、`Link1` 这种「首字母大写、其余小写」，配置里写错大小写也进不了文件名。
 - **类别** 是封闭词表，只有七个：`Analyse`、`Data`、`Group`、`Main`、`Spec`、`Test`、`Version`。判不准就是 `未定`，不会出现 `Database`、`Goup` 这类同义异名。
-- **数字与 PCNAME** 默认取自文件名，组头选定机器后以机器登记为准。
-- **同机同类多张**时按时间片段升序排号：首张是 `…-类别.png`，第二张起 `…-类别-2.png`、`…-类别-3.png`。编号只为防撞名，不表达顺序语义——改文件 mtime 不会改变谁拿 `-2`；不同机器、不同类别、不同 ENV 各自独立编号。
+- **Ultraviewer ID 与 PCNAME** 默认取自文件名；组头选定机器后以机器登记为准（不合规卡上的 ID 输入框会跟着锁成登记值，免得「填的是 A、落的是 B」）；没选机器时，手输的 ID 压过文件名。不合规的图没有文件名可依据，只能手输 ID、靠选机器补 PCNAME。
+- **Ultraviewer ID** 只收纯数字。全角数字、带连字符的 ID 进不了文件名，页面上会标红，落盘时也会被挡。
+- **同机同类多张**时按时间片段升序排号：首张是 `…-类别.png`，第二张起 `…-类别-2.png`、`…-类别-3.png`。编号只为防撞名，不表达顺序语义——改文件 mtime 不会改变谁拿 `-2`；不同机器、不同类别、不同 ENV 各自独立编号。没有时间片段的手动补全图排在最后，彼此按源文件名。
 
 页面上的预览名走 `/api/preview`，与落盘共用同一个计划器，所以预览里带 `-2` 的那一行，落盘就是 `-2`。
 
@@ -53,7 +56,7 @@ python -m autorename --port 9000 --no-browser
 
 | 段 | 含义 | 处理 |
 | --- | --- | --- |
-| `82331647` | 系统给的数字，屏幕上不存在 | 保留 |
+| `82331647` | Ultraviewer ID，屏幕上不存在 | 保留 |
 | `TCSB2` + `18112026` | PCNAME + 日期（DDMMYYYY） | 取 PCNAME，日期丢弃 |
 | `111024` | 时间片段，时/分/秒不补零 | 仅用于排序 |
 
@@ -70,8 +73,8 @@ python -m autorename --port 9000 --no-browser
     {
       "name": "Akarumi",
       "machines": [
-        { "label": "Server", "pcname": "TCSB2", "number": "82331647", "hostname": "TCSB2" },
-        { "label": "Link1", "pcname": "BB", "number": "82335369", "hostname": "BB" }
+        { "label": "Server", "pcname": "TCSB2", "ultraviewer_id": "82331647", "hostname": "TCSB2" },
+        { "label": "Link1", "pcname": "BB", "ultraviewer_id": "82335369", "hostname": "BB" }
       ]
     }
   ]
@@ -79,7 +82,8 @@ python -m autorename --port 9000 --no-browser
 ```
 
 - `envs`：ENV 下拉的选项。本批有几条链路就加几个（`Link4`、`Link5`…）。
-- `customers`：顾客 → 机器登记。`pcname` 与 `number` 一起才认作一台机器；`hostname` 是 UNC 路径里出现的机器名，缺省等于 `pcname`，用于给 ENV 提示。
+- `customers`：顾客 → 机器登记。`pcname` 与 `ultraviewer_id` 一起才认作一台机器；`hostname` 是 UNC 路径里出现的机器名，缺省等于 `pcname`，用于给 ENV 提示。
+- 旧版配置里这一项叫 `number`，本版不再认它：键名对不上就等于这台机器没登记，页面上会直说「配置里没有可用的机器登记」。改个键名重写一份即可。
 - 配置坏掉不会崩：退回默认选项、所有图归入「未登记」组，页面上给一句能读懂的话。
 - 上次用过的目录记在同一个目录下的 `state.json`，下次自动回填。
 
@@ -91,7 +95,9 @@ python -m autorename --port 9000 --no-browser
 - 落盘接口只接受本机页面发来的 JSON 请求（校验 `Content-Type` 与 `Origin`）。
 - 落盘目录指到源目录上会被直接拒绝。
 - 目标文件已存在时一律不覆盖：大小相同记一行「跳过」（重跑幂等），大小不同记一行「冲突」。
+- 日志 `rename-log.csv` 有 `Ultraviewer ID` 一列：事后按 ID 核对不必回头从目标文件名里拆。
 - 只用 Python 标准库，OCR 走系统自带的 `Windows.Media.Ocr`，不需要 `pip install` 任何东西。
+- 手输的 ID 与 PCNAME 只在页面上用来拼名字，不写回配置、不改源文件。
 
 ## 已知限制与路线图
 
@@ -104,7 +110,7 @@ python -m autorename --port 9000 --no-browser
 python -m unittest discover -s tests -t .
 ```
 
-114 个用例，全部通过。OCR 在测试里一律喂 `tests/fixtures/ocr_texts.json` 里录好的真实文本，不跑真引擎。
+127 个用例，全部通过。OCR 在测试里一律喂 `tests/fixtures/ocr_texts.json` 里录好的真实文本，不跑真引擎。
 
 ```
 autorename/

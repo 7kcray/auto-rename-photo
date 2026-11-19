@@ -1,6 +1,6 @@
 r"""机器登记：从本地配置读「顾客 → 机器」，以及从 OCR 文本看出的 ENV 线索。
 
-每台机器带 PCNAME、数字，和一个用于匹配 UNC 前缀的机器名（`hostname` 缺省就是
+每台机器带 PCNAME、Ultraviewer ID，和一个用于匹配 UNC 前缀的机器名（`hostname` 缺省就是
 PCNAME）。配置缺失或格式坏掉时给出能读懂的一句话，不崩整批：本批的图全归到
 「未登记」组，ENV 照常逐张点。
 
@@ -31,12 +31,12 @@ _SKIPPED = "有 {count} 条机器登记格式不对，已跳过：{path}。"
 
 @dataclass(frozen=True)
 class Machine:
-    """一台登记过的机器：属于哪个顾客、叫什么、PCNAME 与数字、UNC 里怎么出现。"""
+    """一台登记过的机器：属于哪个顾客、叫什么、PCNAME 与 Ultraviewer ID、UNC 里怎么出现。"""
 
     customer: str
     label: str
     pcname: str
-    number: str
+    ultraviewer_id: str
     hostname: str
 
     def to_payload(self) -> dict:
@@ -44,7 +44,7 @@ class Machine:
             "customer": self.customer,
             "label": self.label,
             "pcname": self.pcname,
-            "number": self.number,
+            "ultraviewer_id": self.ultraviewer_id,
             "hostname": self.hostname,
         }
 
@@ -57,20 +57,20 @@ class MachineRegistry:
     path: str = ""
     warning: str | None = None
 
-    def index_of(self, pcname: str, number: str) -> int | None:
-        """按文件名里的 PCNAME + 数字找机器。数字是机器身份的一部分，不猜。"""
+    def index_of(self, pcname: str, ultraviewer_id: str) -> int | None:
+        """按 PCNAME + Ultraviewer ID 找机器。ID 是机器身份的一部分，不猜。"""
         name = _as_text(pcname).casefold()
-        wanted = _as_text(number)
+        wanted = _as_text(ultraviewer_id)
         if not name or not wanted:
             return None
 
         for index, machine in enumerate(self.machines):
-            if machine.pcname.casefold() == name and machine.number == wanted:
+            if machine.pcname.casefold() == name and machine.ultraviewer_id == wanted:
                 return index
         return None
 
-    def find(self, pcname: str, number: str) -> Machine | None:
-        index = self.index_of(pcname, number)
+    def find(self, pcname: str, ultraviewer_id: str) -> Machine | None:
+        index = self.index_of(pcname, ultraviewer_id)
         return self.machines[index] if index is not None else None
 
     def find_by_hostname(self, hostname: str) -> Machine | None:
@@ -168,13 +168,13 @@ def _machine_of(customer: str, entry: object) -> Machine | None:
         return None
 
     pcname = _as_text(entry.get("pcname"))
-    number = _as_text(entry.get("number"))
-    if not pcname or not number:
+    ultraviewer_id = _as_text(entry.get("ultraviewer_id"))
+    if not pcname or not ultraviewer_id:
         return None
 
     label = _as_text(entry.get("label")) or pcname
     hostname = _as_text(entry.get("hostname")) or pcname
-    return Machine(customer=customer, label=label, pcname=pcname, number=number, hostname=hostname)
+    return Machine(customer=customer, label=label, pcname=pcname, ultraviewer_id=ultraviewer_id, hostname=hostname)
 
 
 def _as_text(value: object) -> str:

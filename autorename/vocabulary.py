@@ -18,3 +18,12 @@ def canonical_env(value: str) -> str:
     if not text:
         return ""
     return text[:1].upper() + text[1:].lower()
+
+
+def is_ultraviewer_id(value: str) -> bool:
+    """Ultraviewer ID 只认 ASCII 数字。
+
+    `str.isdigit()` 会放行全角数字和 `²`，它们进不了文件名——文件名里读到的、
+    页面上手输的都得过这一关，所以判据只此一份。
+    """
+    return bool(value) and all("0" <= character <= "9" for character in value)

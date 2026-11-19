@@ -72,14 +72,14 @@ class ScanWithOcrTest(unittest.TestCase):
         self.assertEqual(image.predicted, UNDECIDED)
         self.assertEqual(image.ocr_text, "")
 
-    def test_non_compliant_filenames_are_not_sent_to_ocr(self):
+    def test_non_compliant_filenames_are_sent_to_ocr_too(self):
+        """不合规的图补全后一样要落盘，预判与 ENV 线索对它同样有用。"""
         self._touch(SPEC_IMAGE, BROKEN_IMAGE)
         provider = RecordedOcr(self.texts)
 
         scan_directory(str(self.directory), provider)
 
-        self.assertNotIn(BROKEN_IMAGE, provider.asked)
-        self.assertEqual(provider.asked, [SPEC_IMAGE])
+        self.assertEqual(sorted(provider.asked), sorted([SPEC_IMAGE, BROKEN_IMAGE]))
 
     def test_text_that_reads_nothing_leaves_the_row_undecided(self):
         self._touch(SPEC_IMAGE)

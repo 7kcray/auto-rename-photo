@@ -55,7 +55,7 @@ class ServerTestCase(unittest.TestCase):
                     "env": "Server",
                     "category": "Spec",
                     "pcname": "",
-                    "number": "",
+                    "ultraviewer_id": "",
                 }
                 for name in filenames
             ],
@@ -105,6 +105,68 @@ class PreviewTest(ServerTestCase):
         self.assertEqual(
             [item["source"] for item in preview["ready"]], [NAMES[0], NAMES[2]]
         )
+
+
+class NonCompliantCompletionTest(ServerTestCase):
+    """文件名不合规的图补齐后走同一条落盘通道：预览名就是最终落下的名字。"""
+
+    BROKEN = "82331647_111024.png"
+
+    def body(self, *decisions: dict) -> dict:
+        return {"directory": str(self.source), "decisions": list(decisions)}
+
+    def filled(self, **overrides) -> dict:
+        decision = {
+            "filename": self.BROKEN,
+            "env": "Server",
+            "category": "Spec",
+            "pcname": "TCSB2",
+            "ultraviewer_id": "82331647",
+        }
+        decision.update(overrides)
+        return decision
+
+    def test_a_completed_non_compliant_image_lands_under_the_previewed_name(self):
+        self.make_source(self.BROKEN)
+        body = self.body(self.filled())
+
+        preview = self.post("/api/preview", body)
+        landed = self.post("/api/rename", body)
+
+        self.assertEqual(
+            preview["ready"],
+            [{"source": self.BROKEN, "target": "(Server)82331647_TCSB2-Spec.png"}],
+        )
+        self.assertEqual(landed["rows"][0]["target"], preview["ready"][0]["target"])
+        self.assertTrue((self.source / "Renamed" / preview["ready"][0]["target"]).is_file())
+
+    def test_a_hand_typed_id_that_is_not_digits_is_refused_at_the_api_too(self):
+        """页面会标红，但绕过页面直接打 API 也得挡住。"""
+        self.make_source(self.BROKEN)
+
+        preview = self.post("/api/preview", self.body(self.filled(ultraviewer_id="82-331")))
+
+        self.assertEqual(preview["ready"], [])
+
+    def test_an_unfilled_non_compliant_image_does_not_hold_back_the_compliant_ones(self):
+        self.make_source(self.BROKEN, NAMES[0])
+        body = self.body(
+            self.filled(env="", category="未定", pcname="", ultraviewer_id=""),
+            {
+                "filename": NAMES[0],
+                "env": "Server",
+                "category": "Spec",
+                "pcname": "",
+                "ultraviewer_id": "",
+            },
+        )
+
+        preview = self.post("/api/preview", body)
+        landed = self.post("/api/rename", body)
+
+        self.assertEqual([item["source"] for item in preview["ready"]], [NAMES[0]])
+        self.assertEqual(landed["copied"], 1)
+        self.assertEqual([item["filename"] for item in landed["blocked"]], [self.BROKEN])
 
 
 class PreviewGuardTest(ServerTestCase):

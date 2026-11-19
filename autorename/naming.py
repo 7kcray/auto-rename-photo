@@ -1,4 +1,4 @@
-"""目标文件名：`(ENV)数字_PCNAME-类别.png`。
+"""目标文件名：`(ENV)<Ultraviewer ID>_PCNAME-类别.png`。
 
 日期段丢弃——它既不是截图时间也不是需要的字段；扩展名恒为小写 `.png`。
 ENV 在落笔这一刻再规范一次，配置里写错大小写也进不了文件名。
@@ -12,10 +12,10 @@ from autorename.nameparse import PNG_EXTENSION
 from autorename.vocabulary import CATEGORIES, canonical_env
 
 TARGET_DIRECTORY_NAME = "Renamed"
-TEMPLATE = "({env}){number}_{pcname}-{category}" + PNG_EXTENSION
+TEMPLATE = "({env}){ultraviewer_id}_{pcname}-{category}" + PNG_EXTENSION
 
 
-def build_target_name(number: str, pcname: str, env: str, category: str) -> str:
+def build_target_name(ultraviewer_id: str, pcname: str, env: str, category: str) -> str:
     """拼一个目标文件名。ENV 空着、类别不在封闭词表里都算调用方出错。"""
     env_text = canonical_env(env)
     if not env_text:
@@ -23,7 +23,7 @@ def build_target_name(number: str, pcname: str, env: str, category: str) -> str:
     if category not in CATEGORIES:
         raise ValueError(f"类别不在封闭词表里：{category!r}")
 
-    return TEMPLATE.format(env=env_text, number=number, pcname=pcname, category=category)
+    return TEMPLATE.format(env=env_text, ultraviewer_id=ultraviewer_id, pcname=pcname, category=category)
 
 
 def with_sequence(target_name: str, rank: int) -> str:

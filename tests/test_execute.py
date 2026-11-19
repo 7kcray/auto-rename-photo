@@ -99,7 +99,7 @@ class SourceStaysReadOnlyTest(ExecutorTestCase):
 
 
 class LogTest(ExecutorTestCase):
-    def test_log_lives_in_the_target_directory_with_the_seven_agreed_columns(self):
+    def test_log_lives_in_the_target_directory_with_the_eight_agreed_columns(self):
         self.make_source(CONFIRMED)
 
         self.run_batch([Decision(CONFIRMED, env="Server", category="Spec")])
@@ -108,7 +108,7 @@ class LogTest(ExecutorTestCase):
         rows = self.log_rows()
         self.assertEqual(
             list(rows[0].keys()),
-            ["源文件名", "目标文件名", "机器", "ENV", "类别", "状态", "时间戳"],
+            ["源文件名", "目标文件名", "Ultraviewer ID", "机器", "ENV", "类别", "状态", "时间戳"],
         )
 
     def test_log_row_records_the_whole_story_of_one_image(self):
@@ -121,6 +121,7 @@ class LogTest(ExecutorTestCase):
             {
                 "源文件名": CONFIRMED,
                 "目标文件名": "(Server)82331647_TCSB2-Spec.png",
+                "Ultraviewer ID": "82331647",
                 "机器": "TCSB2",
                 "ENV": "Server",
                 "类别": "Spec",

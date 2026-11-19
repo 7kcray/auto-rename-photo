@@ -9,8 +9,8 @@ from autorename.vocabulary import CATEGORIES, DEFAULT_ENVS, canonical_env
 
 class TargetNameTest(unittest.TestCase):
     def test_target_name_follows_the_agreed_template(self):
-        """规格里的模板是 `(ENV)数字_PCNAME-类别.png`，日期段不进名字。"""
-        name = build_target_name(number="82331647", pcname="TCSB2", env="Server", category="Spec")
+        """规格里的模板是 `(ENV)<Ultraviewer ID>_PCNAME-类别.png`，日期段不进名字。"""
+        name = build_target_name(ultraviewer_id="82331647", pcname="TCSB2", env="Server", category="Spec")
 
         self.assertEqual(name, "(Server)82331647_TCSB2-Spec.png")
 
@@ -19,11 +19,11 @@ class TargetNameTest(unittest.TestCase):
         for written in ("SERVER", "server", "SeRvEr"):
             with self.subTest(written=written):
                 name = build_target_name(
-                    number="82331647", pcname="TCSB2", env=written, category="Spec"
+                    ultraviewer_id="82331647", pcname="TCSB2", env=written, category="Spec"
                 )
                 self.assertEqual(name, "(Server)82331647_TCSB2-Spec.png")
 
-        name = build_target_name(number="82335369", pcname="BB", env="LINK1", category="Group")
+        name = build_target_name(ultraviewer_id="82335369", pcname="BB", env="LINK1", category="Group")
         self.assertEqual(name, "(Link1)82335369_BB-Group.png")
 
 

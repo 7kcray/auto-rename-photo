@@ -255,7 +255,7 @@ def _decisions_from(raw: object) -> list[Decision]:
                 env=_text(item.get("env")),
                 category=_text(item.get("category")),
                 pcname=_text(item.get("pcname")),
-                number=_text(item.get("number")),
+                ultraviewer_id=_text(item.get("ultraviewer_id")),
             )
         )
     return decisions
@@ -263,7 +263,7 @@ def _decisions_from(raw: object) -> list[Decision]:
 
 def _ocr_warning(result, provider: OcrProvider | None) -> str | None:
     """OCR 跑过却一张都没读出字：多半是引擎不可用，说一句比默默全红好。"""
-    if provider is None or result.compliant_count == 0:
+    if provider is None or not result.images:
         return None
     if any(image.ocr_text.strip() for image in result.images):
         return None

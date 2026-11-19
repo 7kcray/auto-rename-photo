@@ -1,6 +1,7 @@
-"""计划器：逐张决定（ENV + 类别）→ 谁可以落盘、谁卡在哪儿。
+"""计划器：逐张决定（ENV + 类别 + Ultraviewer ID + PCNAME）→ 谁可以落盘、谁卡在哪儿。
 
-未定、ENV 未点、文件名不合规的图只是被挡在门外，不拖累同批其余图。
+未定、ENV 未点、缺 ID 或缺 PCNAME 的图只是被挡在门外，不拖累同批其余图。
+文件名不合规的图也能落盘——补齐缺的那几项就行，所以它挡住的理由会逐项列出。
 """
 
 import unittest
@@ -48,11 +49,11 @@ class ReadyImageTest(unittest.TestCase):
         self.assertEqual(plan.ready[0].target_name, "(Server)82331647_TCSB2-Spec.png")
         self.assertEqual(plan.ready[0].env, "Server")
 
-    def test_the_machine_confirmed_for_the_group_brings_its_own_pcname_and_number(self):
-        """组头选定的机器说了算：PCNAME 与数字一次带出，不逐张填。"""
+    def test_the_machine_confirmed_for_the_group_brings_its_own_pcname_and_id(self):
+        """组头选定的机器说了算：PCNAME 与 Ultraviewer ID 一次带出，不逐张填。"""
         plan = plan_batch(
             _scan(CONFIRMED),
-            [Decision(CONFIRMED, env="Link1", category="Spec", pcname="BB", number="82335369")],
+            [Decision(CONFIRMED, env="Link1", category="Spec", pcname="BB", ultraviewer_id="82335369")],
             TARGET,
         )
 
@@ -62,7 +63,7 @@ class ReadyImageTest(unittest.TestCase):
     def test_without_a_confirmed_machine_the_filename_identity_stands(self):
         plan = plan_batch(
             _scan(CONFIRMED),
-            [Decision(CONFIRMED, env="Server", category="Spec", pcname="", number="")],
+            [Decision(CONFIRMED, env="Server", category="Spec", pcname="", ultraviewer_id="")],
             TARGET,
         )
 
@@ -106,7 +107,8 @@ class BlockedImageTest(unittest.TestCase):
         self.assertEqual(plan.ready, ())
         self.assertEqual(plan.blocked[0].reason, "类别不在词表里：Database")
 
-    def test_non_compliant_filename_is_blocked_whatever_was_decided(self):
+    def test_non_compliant_filename_lists_every_missing_field(self):
+        """文件名不合规不再一句话判死：缺哪一项就列哪一项，人补一项少一项。"""
         broken = "82331647_111024.png"
         plan = plan_batch(
             _scan(broken),
@@ -115,7 +117,88 @@ class BlockedImageTest(unittest.TestCase):
         )
 
         self.assertEqual(plan.ready, ())
-        self.assertEqual(plan.blocked[0].reason, "文件名不合规")
+        self.assertEqual(plan.blocked[0].reason, "PCNAME 未定、Ultraviewer ID 未填")
+
+
+class NonCompliantImageTest(unittest.TestCase):
+    """文件名不合规的图：补齐 ID、PCNAME、类别、ENV 就能落盘。"""
+
+    BROKEN = "82331647_111024.png"
+
+    def test_filling_in_the_missing_fields_lets_it_through(self):
+        plan = plan_batch(
+            _scan(self.BROKEN),
+            [
+                Decision(
+                    self.BROKEN,
+                    env="Server",
+                    category="Spec",
+                    pcname="TCSB2",
+                    ultraviewer_id="82331647",
+                )
+            ],
+            TARGET,
+        )
+
+        self.assertEqual(plan.blocked, ())
+        self.assertEqual(plan.ready[0].target_name, "(Server)82331647_TCSB2-Spec.png")
+        self.assertEqual(plan.ready[0].ultraviewer_id, "82331647")
+
+    def test_nothing_filled_in_says_all_four_are_missing(self):
+        plan = plan_batch(_scan(self.BROKEN), [], TARGET)
+
+        self.assertEqual(plan.ready, ())
+        self.assertEqual(
+            plan.blocked[0].reason,
+            "类别未定、ENV 未选、PCNAME 未定、Ultraviewer ID 未填",
+        )
+
+    def test_a_hand_typed_id_must_be_digits_only(self):
+        plan = plan_batch(
+            _scan(self.BROKEN),
+            [
+                Decision(
+                    self.BROKEN,
+                    env="Server",
+                    category="Spec",
+                    pcname="TCSB2",
+                    ultraviewer_id="82-331",
+                )
+            ],
+            TARGET,
+        )
+
+        self.assertEqual(plan.ready, ())
+        self.assertEqual(plan.blocked[0].reason, "Ultraviewer ID 必须是纯数字：82-331")
+
+    def test_a_full_width_id_is_refused_even_though_python_calls_it_a_digit(self):
+        """`str.isdigit()` 放行全角数字，但它们进不了文件名，不能悄悄落盘。"""
+        plan = plan_batch(
+            _scan(self.BROKEN),
+            [
+                Decision(
+                    self.BROKEN,
+                    env="Server",
+                    category="Spec",
+                    pcname="TCSB2",
+                    ultraviewer_id="８２３３１６４７",
+                )
+            ],
+            TARGET,
+        )
+
+        self.assertEqual(plan.ready, ())
+        self.assertEqual(plan.blocked[0].reason, "Ultraviewer ID 必须是纯数字：８２３３１６４７")
+
+    def test_a_hand_typed_id_beats_the_one_in_the_filename(self):
+        """没选机器时，页面送下来的手输 ID 压过文件名里的（组头选了机器则以登记为准）。"""
+        plan = plan_batch(
+            _scan(CONFIRMED),
+            [Decision(CONFIRMED, env="Server", category="Spec", ultraviewer_id="99999999")],
+            TARGET,
+        )
+
+        self.assertEqual(plan.ready[0].target_name, "(Server)99999999_TCSB2-Spec.png")
 
 
 class CollisionNumberingTest(unittest.TestCase):
@@ -124,6 +207,23 @@ class CollisionNumberingTest(unittest.TestCase):
     FIRST = "82331647_TCSB218112026_111024.png"
     SECOND = "82331647_TCSB218112026_111027.png"
     THIRD = "82331647_TCSB218112026_111030.png"
+
+    def test_images_without_a_time_fragment_are_numbered_last(self):
+        """手动补全的图没有时间片段：排在最后，彼此按源文件名。"""
+        plan = plan_batch(
+            _scan(self.FIRST, "broken_b.png", "broken_a.png"),
+            [
+                Decision(self.FIRST, env="Server", category="Spec"),
+                Decision("broken_b.png", env="Server", category="Spec", pcname="TCSB2", ultraviewer_id="82331647"),
+                Decision("broken_a.png", env="Server", category="Spec", pcname="TCSB2", ultraviewer_id="82331647"),
+            ],
+            TARGET,
+        )
+
+        names = {copy.source_filename: copy.target_name for copy in plan.ready}
+        self.assertEqual(names[self.FIRST], "(Server)82331647_TCSB2-Spec.png")
+        self.assertEqual(names["broken_a.png"], "(Server)82331647_TCSB2-Spec-2.png")
+        self.assertEqual(names["broken_b.png"], "(Server)82331647_TCSB2-Spec-3.png")
 
     def test_three_images_from_one_machine_and_category_are_numbered_from_the_second(self):
         plan = plan_batch(

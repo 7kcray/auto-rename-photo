@@ -24,8 +24,18 @@ from autorename.plan import BlockedImage, Plan, PlannedCopy
 LOG_FILENAME = "rename-log.csv"
 SOURCE_COLUMN = "源文件名"
 TARGET_COLUMN = "目标文件名"
+ID_COLUMN = "Ultraviewer ID"
 STATUS_COLUMN = "状态"
-LOG_HEADER = (SOURCE_COLUMN, TARGET_COLUMN, "机器", "ENV", "类别", STATUS_COLUMN, "时间戳")
+LOG_HEADER = (
+    SOURCE_COLUMN,
+    TARGET_COLUMN,
+    ID_COLUMN,
+    "机器",
+    "ENV",
+    "类别",
+    STATUS_COLUMN,
+    "时间戳",
+)
 
 STATUS_COPIED = "已复制"
 STATUS_SKIPPED = "跳过"
@@ -50,6 +60,7 @@ class AppliedRow:
         return [
             self.copy.source_filename,
             self.copy.target_name,
+            self.copy.ultraviewer_id,
             self.copy.pcname,
             self.copy.env,
             self.copy.category,

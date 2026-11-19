@@ -221,6 +221,31 @@
 
   select.unset { color: var(--danger); border-color: rgba(255, 92, 92, .45); }
 
+  .id-input {
+    width: 100%;
+    background: #11141a;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 7px 9px;
+    outline: none;
+  }
+
+  .id-input:focus { border-color: var(--accent); }
+  .id-input.bad { border-color: rgba(255, 92, 92, .6); }
+  .id-input::placeholder { color: #5d6474; }
+  .id-input.locked { background: #0d1015; color: var(--muted); cursor: not-allowed; }
+
+  .match-hint {
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--ok);
+  }
+
+  .match-hint[hidden] { display: none; }
+
   .preview {
     font-family: var(--mono);
     font-size: 12px;
@@ -366,7 +391,7 @@
   const lightboxImage = document.getElementById("lightbox-image");
   const lightboxCaption = document.getElementById("lightbox-caption");
 
-  const config = { envs: [], categories: [], undecided: "未定", template: "({env}){number}_{pcname}-{category}.png" };
+  const config = { envs: [], categories: [], undecided: "未定", template: "({env}){ultraviewer_id}_{pcname}-{category}.png" };
 
   let currentDirectory = "";
   let currentCount = 0;
@@ -406,11 +431,22 @@
     return element;
   }
 
-  // 组头选定的机器说了算：PCNAME 与数字一次带出；没选就用文件名解析出的。
+  function isDigits(text) {
+    return /^[0-9]+$/.test(text);
+  }
+
+  // 组头选定的机器说了算：PCNAME 与 Ultraviewer ID 一次带出；没选就用文件名解析出的。
+  // 文件名不合规的图没有解析值可回退：组头也没选时，手输的 ID 命中登记机器就借它的
+  // PCNAME——只把 PCNAME 带出来，卡片留在不合规组，不搬组。
   function effectiveIdentity(record) {
     const machine = record.group && record.group.machine;
-    if (machine) return { pcname: machine.pcname, number: machine.number };
-    return { pcname: record.image.pcname, number: record.image.number };
+    if (machine) return { pcname: machine.pcname, ultraviewer_id: machine.ultraviewer_id, matched: null };
+    if (record.image.compliant) {
+      return { pcname: record.image.pcname, ultraviewer_id: record.image.ultraviewer_id, matched: null };
+    }
+    const typed = record.typedId || "";
+    const matched = typed ? machines.find((item) => item.ultraviewer_id === typed) || null : null;
+    return { pcname: matched ? matched.pcname : "", ultraviewer_id: typed, matched };
   }
 
   // 模板由服务端下发，页面不另抄一份命名规则；ENV 的写法也由服务端给的选项决定。
@@ -422,29 +458,32 @@
     const identity = effectiveIdentity(record);
     return config.template
       .replace("{env}", env)
-      .replace("{number}", identity.number)
-      .replace("{pcname}", identity.pcname)
+      .replace("{ultraviewer_id}", identity.ultraviewer_id || "ID")
+      .replace("{pcname}", identity.pcname || "PCNAME")
       .replace("{category}", category);
   }
 
   // 预览与落盘送同一份决定：两边各拼一份，迟早会分叉。
   function currentDecisions() {
     return records.map((record) => {
-      const machine = record.group.machine;
+      const identity = effectiveIdentity(record);
       return {
         filename: record.image.filename,
         env: record.envSelect.value,
         category: record.categorySelect.value,
-        pcname: machine ? machine.pcname : "",
-        number: machine ? machine.number : "",
+        pcname: identity.pcname,
+        ultraviewer_id: identity.ultraviewer_id,
       };
     });
   }
 
+  // 能落盘 = 名字四段都齐：ENV、类别、ID（纯数字）、PCNAME。服务端会再验一遍。
   function isReady(record) {
-    return record.image.compliant &&
-      record.envSelect.value !== "" &&
-      record.categorySelect.value !== config.undecided;
+    const identity = effectiveIdentity(record);
+    return record.envSelect.value !== "" &&
+      record.categorySelect.value !== config.undecided &&
+      isDigits(identity.ultraviewer_id) &&
+      identity.pcname !== "";
   }
 
   // 撞名编号由服务端算（同机同类第二张起 -2、-3）：页面不另抄一份规则，
@@ -504,8 +543,31 @@
     record.preview.replaceChildren(from, arrow, to);
     record.preview.className = "preview" + (ready ? " ready" : "");
 
-    record.numberValue.textContent = identity.number;
-    record.pcnameValue.textContent = identity.pcname;
+    if (record.ultraviewerIdValue) record.ultraviewerIdValue.textContent = identity.ultraviewer_id;
+    record.pcnameValue.textContent = identity.pcname || "—";
+    if (record.idInput) {
+      // 组头选了机器时 ID 以登记为准：输入框跟着显示并锁住，免得「填的是 A、落的是 B」。
+      const locked = Boolean(record.group && record.group.machine);
+      record.idInput.readOnly = locked;
+      record.idInput.classList.toggle("locked", locked);
+      record.idInput.title = locked
+        ? "本组已选定机器：Ultraviewer ID 以机器登记为准（" + identity.ultraviewer_id + "）"
+        : "文件名里读不到 ID：填上纯数字的 Ultraviewer ID；命中登记机器时会带出 PCNAME";
+      if (locked) {
+        record.idInput.value = identity.ultraviewer_id;
+      } else if (record.wasLocked) {
+        record.idInput.value = record.typedId;
+      }
+      record.wasLocked = locked;
+      const typed = record.idInput.value.trim();
+      record.idInput.classList.toggle("bad", !locked && typed !== "" && !isDigits(typed));
+    }
+    if (record.matchHint) {
+      record.matchHint.hidden = !identity.matched;
+      record.matchHint.textContent = identity.matched
+        ? "已识别：" + identity.matched.customer + " · " + identity.matched.label
+        : "";
+    }
 
     record.card.classList.toggle("ready", ready);
     record.card.classList.toggle("pending", !ready);
@@ -519,8 +581,12 @@
   function updateGroupCount(group) {
     if (!group) return;
 
-    if (!group.payload.pcname) {
-      group.countEl.textContent = "不合规 " + group.payload.images.length + " 张";
+    // 不合规组按「补全了几张」数：一张补齐就能落，不必等整组。
+    if (group.payload.non_compliant) {
+      const done = group.records.filter(isReady).length;
+      group.countEl.innerHTML =
+        "可落盘 <b class='picked'>" + done + "</b> · 待补全 <b class='unpicked'>" +
+        (group.records.length - done) + "</b>";
       return;
     }
 
@@ -537,26 +603,33 @@
     const customer = machine ? machine.customer : cleared ? "" : group.payload.customer;
     const label = machine ? machine.label : cleared ? "未登记" : group.payload.label;
     const identity = machine
-      ? { pcname: machine.pcname, number: machine.number }
-      : { pcname: group.payload.pcname, number: group.payload.number };
+      ? { pcname: machine.pcname, ultraviewer_id: machine.ultraviewer_id }
+      : { pcname: group.payload.pcname, ultraviewer_id: group.payload.ultraviewer_id };
 
     // 没有顾客名时（未登记 / 不合规），组头只写那一个词，不重复。
     group.customerEl.textContent = customer || label || "未登记";
     group.customerEl.classList.toggle("muted", !machine);
     group.machineEl.textContent = customer && label ? "· " + label : "";
-    group.keyEl.textContent = identity.pcname
-      ? "PCNAME " + identity.pcname + " · 数字 " + identity.number
-      : "";
+    if (group.payload.non_compliant) {
+      // 组头选了机器，ID 就跟着锁成登记值；没选才是逐张填。
+      group.keyEl.textContent = machine
+        ? "PCNAME " + identity.pcname + " · ID 取登记值"
+        : "ID 逐张填 · PCNAME 靠选机器或 ID 识别带出";
+    } else {
+      group.keyEl.textContent = identity.pcname
+        ? "PCNAME " + identity.pcname + " · Ultraviewer ID " + identity.ultraviewer_id
+        : "";
+    }
     updateGroupCount(group);
   }
 
   function updateCounts() {
     const ready = records.filter(isReady).length;
-    const pending = currentCount - currentBad - ready;
+    const pending = currentCount - ready;
     const parts = ["本批 <b>" + currentCount + "</b> 张"];
-    if (ready) parts.push("<span class='ok'>已确认 " + ready + "</span>");
-    if (pending) parts.push("<span class='warn'>待点 " + pending + "</span>");
-    if (currentBad) parts.push("<span class='warn'>" + currentBad + " 张不合规</span>");
+    if (ready) parts.push("<span class='ok'>可落盘 " + ready + "</span>");
+    if (pending) parts.push("<span class='warn'>待补全 " + pending + "</span>");
+    if (currentBad) parts.push("<span class='warn'>" + currentBad + " 张文件名不合规</span>");
     countLine.innerHTML = parts.join(" · ");
     applyButton.disabled = ready === 0;
   }
@@ -579,26 +652,46 @@
     const meta = document.createElement("div");
     meta.className = "meta";
 
-    if (!image.compliant) {
-      const name = document.createElement("div");
-      name.className = "filename";
-      name.textContent = image.filename;
-      meta.appendChild(name);
+    const name = document.createElement("div");
+    name.className = "filename";
+    name.textContent = image.filename;
+    meta.appendChild(name);
 
-      const badge = document.createElement("span");
-      badge.className = "badge";
-      badge.textContent = "不合规 · 不参与落盘";
-      meta.appendChild(badge);
-      card.appendChild(meta);
-      return { card, record: null };
-    }
-
+    // 不合规的图没有可解析的值：ID 留一个输入框，PCNAME 交给组头选机器或 ID 识别。
+    let idInput = null;
+    let matchHint = null;
+    let idChip = null;
+    const pcnameChip = chip("PCNAME", image.compliant ? image.pcname : "");
     const chips = document.createElement("div");
     chips.className = "chips";
-    const numberChip = chip("数字", image.number);
-    const pcnameChip = chip("PCNAME", image.pcname);
-    chips.append(numberChip, pcnameChip, chip("时间", image.time_fragment));
-    meta.appendChild(chips);
+
+    if (image.compliant) {
+      idChip = chip("Ultraviewer ID", image.ultraviewer_id);
+      chips.append(idChip, pcnameChip, chip("时间", image.time_fragment));
+      meta.appendChild(chips);
+    } else {
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = "文件名不合规 · 手动补全后可落盘";
+      meta.appendChild(badge);
+
+      idInput = document.createElement("input");
+      idInput.className = "id-input";
+      idInput.type = "text";
+      idInput.inputMode = "numeric";
+      idInput.spellcheck = false;
+      idInput.placeholder = "Ultraviewer ID（纯数字）";
+      idInput.title = "文件名里读不到 ID：填上纯数字的 Ultraviewer ID；命中登记机器时会带出 PCNAME";
+      meta.appendChild(idInput);
+
+      matchHint = document.createElement("div");
+      matchHint.className = "match-hint";
+      matchHint.hidden = true;
+      meta.appendChild(matchHint);
+
+      chips.append(pcnameChip);
+      meta.appendChild(chips);
+    }
 
     const selects = document.createElement("div");
     selects.className = "selects";
@@ -648,11 +741,22 @@
       categorySelect,
       envSelect,
       preview,
-      numberValue: numberChip.querySelector("b"),
+      idInput,
+      matchHint,
+      // 手输的 ID 单独记一份：组头选机器时输入框被锁成登记值，取消选机器后要能还原。
+      typedId: "",
+      wasLocked: false,
+      ultraviewerIdValue: idChip ? idChip.querySelector("b") : null,
       pcnameValue: pcnameChip.querySelector("b"),
     };
     categorySelect.addEventListener("change", refreshAll);
     envSelect.addEventListener("change", refreshAll);
+    if (idInput) {
+      idInput.addEventListener("input", () => {
+        record.typedId = idInput.value.trim();
+        refreshAll();
+      });
+    }
     return { card, record };
   }
 
@@ -694,12 +798,16 @@
     };
     group.countEl.className = "group-count";
 
-    // 文件名不合规的那一组没有机器可选，也没有 ENV 要点。
-    if (payload.pcname) {
+    // 不合规组也要选机器：文件名里没有 PCNAME，组头是它唯一的来源。
+    if (payload.pcname || payload.non_compliant) {
       const select = document.createElement("select");
       select.className = "machine-select";
-      select.title = "顾客 → 机器：选定后本组 PCNAME 与数字一次带出，ENV 仍然逐张点";
-      select.appendChild(option("", "未登记（按文件名）"));
+      select.title = payload.non_compliant
+        ? "顾客 → 机器：选定后本组 PCNAME 与 Ultraviewer ID 一次带出（ID 输入框随之锁定）；ENV 仍逐张点"
+        : "顾客 → 机器：选定后本组 PCNAME 与 Ultraviewer ID 一次带出，ENV 仍然逐张点";
+      select.appendChild(
+        option("", payload.non_compliant ? "PCNAME 未定（按 ID 识别）" : "未登记（按文件名）")
+      );
 
       let holder = select;
       machines.forEach((machine, index) => {
@@ -739,7 +847,7 @@
       if (!image) return;
       const built = renderCard(image, directory, group);
       grid.appendChild(built.card);
-      if (built.record) group.records.push(built.record);
+      group.records.push(built.record);
     });
 
     updateGroupHead(group);
@@ -793,7 +901,7 @@
       }
       render(payload);
       const predicted = payload.images.filter(
-        (image) => image.compliant && image.predicted_category && image.predicted_category !== config.undecided
+        (image) => image.predicted_category && image.predicted_category !== config.undecided
       ).length;
       const tail = predicted ? "，其中 " + predicted + " 张类别已预判，核对后点 ENV" : "";
       const groupCount = (payload.groups || []).length;
@@ -888,7 +996,7 @@
       hint.appendChild(configPath);
       hint.append("（已登记 " + machines.length + " 台机器；加一台就照着 ");
       const sample = document.createElement("code");
-      sample.textContent = '{"name": "顾客", "machines": [{"pcname": "TCSB2", "number": "82331647"}]}';
+      sample.textContent = '{"name": "顾客", "machines": [{"pcname": "TCSB2", "ultraviewer_id": "82331647"}]}';
       hint.appendChild(sample);
       hint.append(" 的样子加一条，刷新页面即生效）。");
       configHint.appendChild(hint);
