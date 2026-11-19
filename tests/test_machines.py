@@ -36,8 +36,8 @@ def _registry(*machines: Machine) -> MachineRegistry:
 
 
 AKARUMI = _registry(
-    Machine(customer="Akarumi", label="服务器", pcname="TCSB2", number="82331647", hostname="TCSB2"),
-    Machine(customer="Akarumi", label="客户端", pcname="BB", number="82335369", hostname="BB"),
+    Machine(customer="Akarumi", label="Server", pcname="TCSB2", number="82331647", hostname="TCSB2"),
+    Machine(customer="Akarumi", label="Link1", pcname="BB", number="82335369", hostname="BB"),
 )
 
 
@@ -57,8 +57,8 @@ class RegistryFromConfigTest(unittest.TestCase):
                     {
                         "name": "Akarumi",
                         "machines": [
-                            {"label": "服务器", "pcname": "TCSB2", "number": "82331647", "hostname": "TCSR2"},
-                            {"label": "客户端", "pcname": "BB", "number": 82335369},
+                            {"label": "Server", "pcname": "TCSB2", "number": "82331647", "hostname": "TCSR2"},
+                            {"label": "Link1", "pcname": "BB", "number": 82335369},
                         ],
                     }
                 ]
@@ -69,7 +69,7 @@ class RegistryFromConfigTest(unittest.TestCase):
 
         self.assertIsNone(registry.warning)
         self.assertEqual([machine.customer for machine in registry.machines], ["Akarumi", "Akarumi"])
-        self.assertEqual([machine.label for machine in registry.machines], ["服务器", "客户端"])
+        self.assertEqual([machine.label for machine in registry.machines], ["Server", "Link1"])
         self.assertEqual(registry.machines[0].hostname, "TCSR2")
         self.assertEqual(registry.machines[1].number, "82335369")
 
@@ -150,10 +150,10 @@ class DefaultConfigTest(unittest.TestCase):
 
 class FindMachineTest(unittest.TestCase):
     def test_number_and_pcname_find_the_machine(self):
-        self.assertEqual(AKARUMI.find("TCSB2", "82331647").label, "服务器")
+        self.assertEqual(AKARUMI.find("TCSB2", "82331647").label, "Server")
 
     def test_pcname_is_matched_case_insensitively(self):
-        self.assertEqual(AKARUMI.find("tcsb2", "82331647").label, "服务器")
+        self.assertEqual(AKARUMI.find("tcsb2", "82331647").label, "Server")
 
     def test_a_new_number_does_not_borrow_another_machines_identity(self):
         """数字是机器身份的一部分：对不上就是没登记，不能拿登记的数字顶替。"""
@@ -163,7 +163,7 @@ class FindMachineTest(unittest.TestCase):
         self.assertIsNone(AKARUMI.find("ZZ", "82331647"))
 
     def test_hostname_finds_the_machine_behind_a_unc_prefix(self):
-        self.assertEqual(AKARUMI.find_by_hostname("tcsb2").label, "服务器")
+        self.assertEqual(AKARUMI.find_by_hostname("tcsb2").label, "Server")
 
 
 class EnvHintTest(unittest.TestCase):
@@ -174,7 +174,7 @@ class EnvHintTest(unittest.TestCase):
         self.assertIn("\\\\TCSB2\\", hint)
 
     def test_the_hint_names_the_registered_machine_when_it_knows_it(self):
-        self.assertIn("服务器", env_hint(CLIENT_TEXT, AKARUMI))
+        self.assertIn("Server", env_hint(CLIENT_TEXT, AKARUMI))
 
     def test_local_drive_reads_as_a_server(self):
         hint = env_hint(SERVER_TEXT, AKARUMI)

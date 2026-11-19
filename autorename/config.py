@@ -22,12 +22,13 @@ CONFIG_FILENAME = "config.json"
 CUSTOMERS_KEY = "customers"
 
 # 第一次运行时写进 config.json 的机器登记样板：换顾客、换机器就改这几行。
+# `label` 用 ENV 里的叫法（`Server`、`Link1`），组头和下拉里显示的就是它。
 SAMPLE_CUSTOMERS = (
     {
         "name": "Akarumi",
         "machines": (
-            {"label": "服务器", "pcname": "TCSB2", "number": "82331647", "hostname": "TCSB2"},
-            {"label": "客户端", "pcname": "BB", "number": "82335369", "hostname": "BB"},
+            {"label": "Server", "pcname": "TCSB2", "number": "82331647", "hostname": "TCSB2"},
+            {"label": "Link1", "pcname": "BB", "number": "82335369", "hostname": "BB"},
         ),
     },
 )

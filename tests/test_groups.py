@@ -22,8 +22,8 @@ SERVER_TEXT = "C:\\eStream\\SQLAccounting\\Share\\Default.DCF"
 
 REGISTRY = MachineRegistry(
     machines=(
-        Machine(customer="Akarumi", label="服务器", pcname="TCSB2", number="82331647", hostname="TCSB2"),
-        Machine(customer="Akarumi", label="客户端", pcname="BB", number="82335369", hostname="BB"),
+        Machine(customer="Akarumi", label="Server", pcname="TCSB2", number="82331647", hostname="TCSB2"),
+        Machine(customer="Akarumi", label="Link1", pcname="BB", number="82335369", hostname="BB"),
     ),
     path="C:/config.json",
 )
@@ -41,7 +41,7 @@ class GroupingTest(unittest.TestCase):
     def test_images_split_by_the_machine_in_their_filename(self):
         groups = group_images([_image(SERVER_IMAGE), _image(CLIENT_IMAGE)], REGISTRY)
 
-        self.assertEqual([group.label for group in groups], ["服务器", "客户端"])
+        self.assertEqual([group.label for group in groups], ["Server", "Link1"])
         self.assertEqual([group.customer for group in groups], ["Akarumi", "Akarumi"])
         self.assertEqual([image.filename for image in groups[0].images], [SERVER_IMAGE])
         self.assertEqual([image.filename for image in groups[1].images], [CLIENT_IMAGE])
@@ -71,19 +71,19 @@ class GroupingTest(unittest.TestCase):
     def test_non_compliant_images_form_their_own_trailing_group(self):
         groups = group_images([_image(BROKEN_IMAGE), _image(SERVER_IMAGE)], REGISTRY)
 
-        self.assertEqual([group.label for group in groups], ["服务器", "不合规"])
+        self.assertEqual([group.label for group in groups], ["Server", "不合规"])
         self.assertEqual([image.filename for image in groups[-1].images], [BROKEN_IMAGE])
         self.assertFalse(groups[-1].registered)
 
     def test_registered_groups_follow_the_registry_order(self):
         groups = group_images([_image(CLIENT_IMAGE), _image(SERVER_IMAGE)], REGISTRY)
 
-        self.assertEqual([group.label for group in groups], ["服务器", "客户端"])
+        self.assertEqual([group.label for group in groups], ["Server", "Link1"])
 
     def test_unregistered_groups_come_after_registered_ones(self):
         groups = group_images([_image(STRANGER_IMAGE), _image(CLIENT_IMAGE)], REGISTRY)
 
-        self.assertEqual([group.label for group in groups], ["客户端", "未登记"])
+        self.assertEqual([group.label for group in groups], ["Link1", "未登记"])
 
 
 class BatchPayloadTest(unittest.TestCase):
