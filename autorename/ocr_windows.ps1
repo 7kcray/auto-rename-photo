@@ -6,6 +6,10 @@
 #
 # 单张图识别失败就给它空串，不让一张坏图毁掉整批。
 # 引擎起不来时写空数组：Python 那边会当作「全部未定」，人照样能手点。
+#
+# 截图里的路径文字（`\\TCSB2\eStream\...`、`C:\eStream\...`）只有几个像素高，
+# 原生尺寸下引擎读不出来；先按 2 倍 Cubic 放大再识别，ENV 线索才有据可依。
+# 放大失败或超出引擎上限就退回原生尺寸。
 
 param(
     [Parameter(Mandatory = $true)][string]$Out,
@@ -13,6 +17,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+$OcrScale = 2.0
 
 function Write-Texts([string[]]$Texts) {
     $payload = [pscustomobject]@{ texts = @($Texts) }
@@ -40,6 +45,8 @@ try {
     [Windows.Storage.StorageFile, Windows.Storage, ContentType = WindowsRuntime] | Out-Null
     [Windows.Storage.Streams.IRandomAccessStream, Windows.Storage, ContentType = WindowsRuntime] | Out-Null
     [Windows.Graphics.Imaging.BitmapDecoder, Windows.Graphics, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Graphics.Imaging.BitmapTransform, Windows.Graphics, ContentType = WindowsRuntime] | Out-Null
+    [Windows.Graphics.Imaging.PixelDataProvider, Windows.Graphics, ContentType = WindowsRuntime] | Out-Null
     [Windows.Graphics.Imaging.SoftwareBitmap, Windows.Graphics, ContentType = WindowsRuntime] | Out-Null
     [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime] | Out-Null
 
@@ -47,6 +54,39 @@ try {
     if (-not $engine) {
         Write-Texts @()
         exit 0
+    }
+
+    function Get-ScaledBitmap($Decoder) {
+        $limit = [Windows.Media.Ocr.OcrEngine]::MaxImageDimension
+        $width = [uint32]([math]::Round($Decoder.PixelWidth * $OcrScale))
+        $height = [uint32]([math]::Round($Decoder.PixelHeight * $OcrScale))
+        if ($width -gt $limit -or $height -gt $limit) {
+            throw 'scaled image is larger than the OCR engine allows'
+        }
+
+        $transform = New-Object Windows.Graphics.Imaging.BitmapTransform
+        $transform.ScaledWidth = $width
+        $transform.ScaledHeight = $height
+        $transform.InterpolationMode = [Windows.Graphics.Imaging.BitmapInterpolationMode]::Cubic
+
+        $provider = Await ($Decoder.GetPixelDataAsync(
+            [Windows.Graphics.Imaging.BitmapPixelFormat]::Bgra8,
+            [Windows.Graphics.Imaging.BitmapAlphaMode]::Premultiplied,
+            $transform,
+            [Windows.Graphics.Imaging.ExifOrientationMode]::IgnoreExifOrientation,
+            [Windows.Graphics.Imaging.ColorManagementMode]::DoNotColorManage
+        )) ([Windows.Graphics.Imaging.PixelDataProvider])
+
+        $buffer = [System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions]::AsBuffer(
+            $provider.DetachPixelData()
+        )
+        [Windows.Graphics.Imaging.SoftwareBitmap]::CreateCopyFromBuffer(
+            $buffer,
+            [Windows.Graphics.Imaging.BitmapPixelFormat]::Bgra8,
+            $width,
+            $height,
+            [Windows.Graphics.Imaging.BitmapAlphaMode]::Premultiplied
+        )
     }
 }
 catch {
@@ -61,7 +101,15 @@ foreach ($path in $Paths) {
         $file = Await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($path)) ([Windows.Storage.StorageFile])
         $stream = Await ($file.OpenAsync([Windows.Storage.FileAccessMode]::Read)) ([Windows.Storage.Streams.IRandomAccessStream])
         $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
-        $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+
+        $bitmap = $null
+        try {
+            $bitmap = Get-ScaledBitmap $decoder
+        }
+        catch {
+            $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+        }
+
         $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
 
         $lines = @()

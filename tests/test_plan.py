@@ -48,6 +48,26 @@ class ReadyImageTest(unittest.TestCase):
         self.assertEqual(plan.ready[0].target_name, "(Server)82331647_TCSB2-Spec.png")
         self.assertEqual(plan.ready[0].env, "Server")
 
+    def test_the_machine_confirmed_for_the_group_brings_its_own_pcname_and_number(self):
+        """组头选定的机器说了算：PCNAME 与数字一次带出，不逐张填。"""
+        plan = plan_batch(
+            _scan(CONFIRMED),
+            [Decision(CONFIRMED, env="Link1", category="Spec", pcname="BB", number="82335369")],
+            TARGET,
+        )
+
+        self.assertEqual(plan.ready[0].target_name, "(Link1)82335369_BB-Spec.png")
+        self.assertEqual(plan.ready[0].pcname, "BB")
+
+    def test_without_a_confirmed_machine_the_filename_identity_stands(self):
+        plan = plan_batch(
+            _scan(CONFIRMED),
+            [Decision(CONFIRMED, env="Server", category="Spec", pcname="", number="")],
+            TARGET,
+        )
+
+        self.assertEqual(plan.ready[0].target_name, "(Server)82331647_TCSB2-Spec.png")
+
 
 class BlockedImageTest(unittest.TestCase):
     def test_undecided_category_is_blocked_and_keeps_its_reason(self):

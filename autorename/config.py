@@ -1,7 +1,11 @@
-"""本机配置：ENV 下拉的选项集合。
+"""本机配置：ENV 下拉的选项集合，以及「顾客 → 机器」登记。
 
 默认给 `Server` 与 `Link1`…`Link3`。本批有几条链路，就在 `config.json` 的 `envs` 里
 加几个（`Link4`、`Link5`…），下次扫描即生效。
+
+`customers` 是本机的机器登记：每个顾客下面列几台机器，每台带 `pcname`、`number`
+和可选的 `hostname`（UNC 里出现的机器名，缺省等于 PCNAME）。第一次运行会写一份
+带 Akarumi 示例的模板，照着自己的顾客改即可；本版没有增删改界面。
 
 配置缺失或坏掉时退回默认值，并给一句能读懂的话——配置坏掉不该拖垮整批。
 写进来的值统一收成 `Server` / `Link1` 这种首字母大写、其余小写。
@@ -15,6 +19,18 @@ from autorename.state import app_data_dir
 from autorename.vocabulary import DEFAULT_ENVS, canonical_env
 
 CONFIG_FILENAME = "config.json"
+CUSTOMERS_KEY = "customers"
+
+# 第一次运行时写进 config.json 的机器登记样板：换顾客、换机器就改这几行。
+SAMPLE_CUSTOMERS = (
+    {
+        "name": "Akarumi",
+        "machines": (
+            {"label": "服务器", "pcname": "TCSB2", "number": "82331647", "hostname": "TCSB2"},
+            {"label": "客户端", "pcname": "BB", "number": "82335369", "hostname": "BB"},
+        ),
+    },
+)
 
 
 @dataclass(frozen=True)
@@ -62,7 +78,11 @@ def ensure_default_config(path: Path | None = None) -> None:
 
     try:
         resolved.parent.mkdir(parents=True, exist_ok=True)
-        body = json.dumps({"envs": list(DEFAULT_ENVS)}, ensure_ascii=False, indent=2)
+        body = json.dumps(
+            {"envs": list(DEFAULT_ENVS), CUSTOMERS_KEY: list(SAMPLE_CUSTOMERS)},
+            ensure_ascii=False,
+            indent=2,
+        )
         resolved.write_text(body + "\n", encoding="utf-8")
     except OSError:
         # 写不出配置文件不影响用默认选项开工。

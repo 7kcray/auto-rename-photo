@@ -235,6 +235,52 @@
   .preview .to { color: var(--danger); }
   .preview.ready .to { color: var(--ok); }
 
+  .group { margin-bottom: 26px; }
+  .group:last-child { margin-bottom: 0; }
+
+  .group-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 0 2px 10px;
+    margin-bottom: 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .group-title { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+
+  .customer { font-size: 14px; font-weight: 600; }
+  .customer.muted { color: var(--muted); font-weight: 500; }
+
+  .machine { font-size: 12px; color: var(--text); }
+  .group-key { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+  .group-side { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+  .machine-select { max-width: 230px; flex: none; }
+
+  .group-count {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .group-count .picked { color: var(--ok); }
+  .group-count .unpicked { color: #e0a44c; }
+
+  .env-hint {
+    display: flex;
+    gap: 6px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: #e0a44c;
+  }
+
+  .env-hint::before { content: "●"; font-size: 8px; line-height: 2; }
+  .env-hint[hidden] { display: none; }
+
   .empty {
     color: var(--muted);
     border: 1px dashed var(--line);
@@ -297,7 +343,7 @@
 <div class="status" id="status"></div>
 
 <main>
-  <div class="grid" id="grid"></div>
+  <div id="groups"></div>
   <div class="empty" id="empty">给一个截图目录，这里会把里面的 PNG 全列出来。</div>
 </main>
 
@@ -313,7 +359,7 @@
   const applyButton = document.getElementById("apply");
   const statusLine = document.getElementById("status");
   const configHint = document.getElementById("config-hint");
-  const grid = document.getElementById("grid");
+  const groupsContainer = document.getElementById("groups");
   const empty = document.getElementById("empty");
   const countLine = document.getElementById("count");
   const lightbox = document.getElementById("lightbox");
@@ -326,6 +372,7 @@
   let currentCount = 0;
   let currentBad = 0;
   let records = [];
+  let machines = [];
   let targetDirty = false;
 
   function setStatus(message, kind) {
@@ -355,16 +402,24 @@
     return element;
   }
 
+  // 组头选定的机器说了算：PCNAME 与数字一次带出；没选就用文件名解析出的。
+  function effectiveIdentity(record) {
+    const machine = record.group && record.group.machine;
+    if (machine) return { pcname: machine.pcname, number: machine.number };
+    return { pcname: record.image.pcname, number: record.image.number };
+  }
+
   // 模板由服务端下发，页面不另抄一份命名规则；ENV 的写法也由服务端给的选项决定。
   function targetName(record) {
     const env = record.envSelect.value || "ENV";
     const category = record.categorySelect.value === config.undecided
       ? "类别"
       : record.categorySelect.value;
+    const identity = effectiveIdentity(record);
     return config.template
       .replace("{env}", env)
-      .replace("{number}", record.image.number)
-      .replace("{pcname}", record.image.pcname)
+      .replace("{number}", identity.number)
+      .replace("{pcname}", identity.pcname)
       .replace("{category}", category);
   }
 
@@ -376,6 +431,7 @@
 
   function refresh(record) {
     const ready = isReady(record);
+    const identity = effectiveIdentity(record);
 
     const from = document.createElement("span");
     from.className = "from";
@@ -389,12 +445,50 @@
     record.preview.replaceChildren(from, arrow, to);
     record.preview.className = "preview" + (ready ? " ready" : "");
 
+    record.numberValue.textContent = identity.number;
+    record.pcnameValue.textContent = identity.pcname;
+
     record.card.classList.toggle("ready", ready);
     record.card.classList.toggle("pending", !ready);
     record.envSelect.classList.toggle("unset", record.envSelect.value === "");
     record.categorySelect.classList.toggle("unset", record.categorySelect.value === config.undecided);
 
+    updateGroupCount(record.group);
     updateCounts();
+  }
+
+  function updateGroupCount(group) {
+    if (!group) return;
+
+    if (!group.payload.pcname) {
+      group.countEl.textContent = "不合规 " + group.payload.images.length + " 张";
+      return;
+    }
+
+    const picked = group.records.filter((record) => record.envSelect.value !== "").length;
+    const unpicked = group.records.length - picked;
+    group.countEl.innerHTML =
+      "ENV 已点 <b class='picked'>" + picked + "</b> · 未点 <b class='unpicked'>" + unpicked + "</b>";
+  }
+
+  function updateGroupHead(group) {
+    const machine = group.machine;
+    // 登记过的组被人手动改回「未登记」时，组头也得跟着说未登记。
+    const cleared = !machine && group.payload.machine_index !== null;
+    const customer = machine ? machine.customer : cleared ? "" : group.payload.customer;
+    const label = machine ? machine.label : cleared ? "未登记" : group.payload.label;
+    const identity = machine
+      ? { pcname: machine.pcname, number: machine.number }
+      : { pcname: group.payload.pcname, number: group.payload.number };
+
+    // 没有顾客名时（未登记 / 不合规），组头只写那一个词，不重复。
+    group.customerEl.textContent = customer || label || "未登记";
+    group.customerEl.classList.toggle("muted", !machine);
+    group.machineEl.textContent = customer && label ? "· " + label : "";
+    group.keyEl.textContent = identity.pcname
+      ? "PCNAME " + identity.pcname + " · 数字 " + identity.number
+      : "";
+    updateGroupCount(group);
   }
 
   function updateCounts() {
@@ -408,7 +502,7 @@
     applyButton.disabled = ready === 0;
   }
 
-  function renderCard(image, directory) {
+  function renderCard(image, directory, group) {
     const card = document.createElement("div");
     card.className = image.compliant ? "card" : "card invalid";
 
@@ -442,9 +536,9 @@
 
     const chips = document.createElement("div");
     chips.className = "chips";
-    chips.appendChild(chip("数字", image.number));
-    chips.appendChild(chip("PCNAME", image.pcname));
-    chips.appendChild(chip("时间", image.time_fragment));
+    const numberChip = chip("数字", image.number);
+    const pcnameChip = chip("PCNAME", image.pcname);
+    chips.append(numberChip, pcnameChip, chip("时间", image.time_fragment));
     meta.appendChild(chips);
 
     const selects = document.createElement("div");
@@ -472,29 +566,140 @@
     selects.appendChild(envSelect);
     meta.appendChild(selects);
 
+    // 线索只写在下拉旁边：ENV 仍然空着，点哪一格由人决定。
+    const hint = document.createElement("div");
+    hint.className = "env-hint";
+    if (image.env_hint) {
+      hint.textContent = image.env_hint;
+    } else {
+      hint.hidden = true;
+    }
+    meta.appendChild(hint);
+
     const preview = document.createElement("div");
     preview.className = "preview";
     meta.appendChild(preview);
 
     card.appendChild(meta);
 
-    const record = { image, card, categorySelect, envSelect, preview };
+    const record = {
+      image,
+      card,
+      group,
+      categorySelect,
+      envSelect,
+      preview,
+      numberValue: numberChip.querySelector("b"),
+      pcnameValue: pcnameChip.querySelector("b"),
+    };
     categorySelect.addEventListener("change", () => refresh(record));
     envSelect.addEventListener("change", () => refresh(record));
     return { card, record };
+  }
+
+  function defaultMachineIndex(payload) {
+    return payload.machine_index === null || payload.machine_index === undefined
+      ? ""
+      : String(payload.machine_index);
+  }
+
+  function renderGroup(payload, imagesByName, directory) {
+    const section = document.createElement("section");
+    section.className = "group";
+
+    const head = document.createElement("div");
+    head.className = "group-head";
+
+    const title = document.createElement("div");
+    title.className = "group-title";
+    const customerEl = document.createElement("span");
+    customerEl.className = "customer";
+    const machineEl = document.createElement("span");
+    machineEl.className = "machine";
+    const keyEl = document.createElement("span");
+    keyEl.className = "group-key";
+    title.append(customerEl, machineEl, keyEl);
+    head.appendChild(title);
+
+    const side = document.createElement("div");
+    side.className = "group-side";
+
+    const group = {
+      payload,
+      machine: null,
+      records: [],
+      customerEl,
+      machineEl,
+      keyEl,
+      countEl: document.createElement("span"),
+    };
+    group.countEl.className = "group-count";
+
+    // 文件名不合规的那一组没有机器可选，也没有 ENV 要点。
+    if (payload.pcname) {
+      const select = document.createElement("select");
+      select.className = "machine-select";
+      select.title = "顾客 → 机器：选定后本组 PCNAME 与数字一次带出，ENV 仍然逐张点";
+      select.appendChild(option("", "未登记（按文件名）"));
+
+      let holder = select;
+      machines.forEach((machine, index) => {
+        if (holder === select || holder.label !== machine.customer) {
+          holder = document.createElement("optgroup");
+          holder.label = machine.customer;
+          select.appendChild(holder);
+        }
+        holder.appendChild(option(String(index), machine.label + " · " + machine.pcname));
+      });
+
+      const defaultIndex = defaultMachineIndex(payload);
+      if (defaultIndex !== "") {
+        select.value = defaultIndex;
+        group.machine = machines[Number(defaultIndex)];
+      }
+
+      select.addEventListener("change", () => {
+        group.machine = select.value === "" ? null : machines[Number(select.value)];
+        updateGroupHead(group);
+        group.records.forEach(refresh);
+      });
+
+      side.appendChild(select);
+    }
+
+    side.appendChild(group.countEl);
+    head.appendChild(side);
+    section.appendChild(head);
+
+    const grid = document.createElement("div");
+    grid.className = "grid";
+    section.appendChild(grid);
+
+    payload.images.forEach((filename) => {
+      const image = imagesByName.get(filename);
+      if (!image) return;
+      const built = renderCard(image, directory, group);
+      grid.appendChild(built.card);
+      if (built.record) group.records.push(built.record);
+    });
+
+    updateGroupHead(group);
+    return { section, group };
   }
 
   function render(payload) {
     currentDirectory = payload.directory;
     currentCount = payload.count;
     currentBad = payload.non_compliant_count;
+    machines = payload.machines || [];
     records = [];
-    grid.replaceChildren();
+    groupsContainer.replaceChildren();
 
-    payload.images.forEach((image) => {
-      const built = renderCard(image, payload.directory);
-      grid.appendChild(built.card);
-      if (built.record) records.push(built.record);
+    const imagesByName = new Map(payload.images.map((image) => [image.filename, image]));
+    (payload.groups || []).forEach((groupPayload) => {
+      const built = renderGroup(groupPayload, imagesByName, payload.directory);
+      groupsContainer.appendChild(built.section);
+      built.group.records.forEach((record) => records.push(record));
     });
 
     records.forEach(refresh);
@@ -528,15 +733,15 @@
         return;
       }
       render(payload);
-      if (payload.ocr_warning) {
-        setStatus(payload.ocr_warning, "warn");
-        return;
-      }
       const predicted = payload.images.filter(
         (image) => image.compliant && image.predicted_category && image.predicted_category !== config.undecided
       ).length;
       const tail = predicted ? "，其中 " + predicted + " 张类别已预判，核对后点 ENV" : "";
-      setStatus("已列出 " + payload.count + " 张" + tail + "：" + payload.directory);
+      const groupCount = (payload.groups || []).length;
+      const grouped = groupCount ? "，分 " + groupCount + " 组" : "";
+      const summary = "已列出 " + payload.count + " 张" + grouped + tail + "：" + payload.directory;
+      const note = payload.machine_warning || payload.ocr_warning;
+      setStatus(note ? summary + "　" + note : summary, note ? "warn" : "");
     } catch (error) {
       setStatus("扫描失败：" + error.message, "error");
     } finally {
@@ -545,11 +750,16 @@
   }
 
   async function apply() {
-    const decisions = records.map((record) => ({
-      filename: record.image.filename,
-      env: record.envSelect.value,
-      category: record.categorySelect.value,
-    }));
+    const decisions = records.map((record) => {
+      const machine = record.group.machine;
+      return {
+        filename: record.image.filename,
+        env: record.envSelect.value,
+        category: record.categorySelect.value,
+        pcname: machine ? machine.pcname : "",
+        number: machine ? machine.number : "",
+      };
+    });
 
     applyButton.disabled = true;
     setStatus("正在落盘…");
@@ -618,20 +828,23 @@
       config.envs = payload.envs || [];
       config.categories = payload.categories || [];
       config.undecided = payload.undecided || "未定";
+      machines = payload.machines || [];
 
       const hint = document.createElement("span");
-      hint.append("ENV 选项来自 ");
+      hint.append("ENV 选项与「顾客 → 机器」登记来自 ");
       const configPath = document.createElement("code");
       configPath.textContent = payload.config_path || "";
       hint.appendChild(configPath);
-      hint.append("（加一条 ");
+      hint.append("（已登记 " + machines.length + " 台机器；加一台就照着 ");
       const sample = document.createElement("code");
-      sample.textContent = '"Link4"';
+      sample.textContent = '{"name": "顾客", "machines": [{"pcname": "TCSB2", "number": "82331647"}]}';
       hint.appendChild(sample);
-      hint.append(" 再刷新页面即可出现）。");
+      hint.append(" 的样子加一条，刷新页面即生效）。");
       configHint.appendChild(hint);
       if (payload.warning) {
         setStatus(payload.warning, "error");
+      } else if (payload.machine_warning) {
+        setStatus(payload.machine_warning, "warn");
       }
     } catch (error) {
       setStatus("读不到 ENV 配置：" + error.message, "error");

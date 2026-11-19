@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from autorename import config, state
+from autorename import config, groups, machines, state
 from autorename.executor import TargetUnusable, apply_plan
 from autorename.naming import TEMPLATE, default_target_directory
 from autorename.nameparse import PNG_EXTENSION
@@ -77,6 +77,7 @@ class ToolRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_config(self) -> None:
         options = config.load_env_options()
+        registry = machines.load_registry()
         self._send_json(
             {
                 "envs": list(options.envs),
@@ -85,6 +86,8 @@ class ToolRequestHandler(BaseHTTPRequestHandler):
                 "template": TEMPLATE,
                 "config_path": options.path,
                 "warning": options.warning,
+                "machines": [machine.to_payload() for machine in registry.machines],
+                "machine_warning": registry.warning,
             }
         )
 
@@ -101,7 +104,7 @@ class ToolRequestHandler(BaseHTTPRequestHandler):
             return
 
         state.save_last_directory(result.directory)
-        payload = result.to_payload()
+        payload = groups.build_payload(result, machines.load_registry())
         payload["default_target_directory"] = default_target_directory(result.directory)
         payload["ocr_warning"] = _ocr_warning(result, self.ocr_provider)
         self._send_json(payload)
@@ -218,7 +221,13 @@ def _decisions_from(raw: object) -> list[Decision]:
         if not filename:
             continue
         decisions.append(
-            Decision(filename=filename, env=_text(item.get("env")), category=_text(item.get("category")))
+            Decision(
+                filename=filename,
+                env=_text(item.get("env")),
+                category=_text(item.get("category")),
+                pcname=_text(item.get("pcname")),
+                number=_text(item.get("number")),
+            )
         )
     return decisions
 

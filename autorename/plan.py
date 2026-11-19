@@ -14,11 +14,16 @@ from autorename.vocabulary import CATEGORIES, UNDECIDED, canonical_env
 
 @dataclass(frozen=True)
 class Decision:
-    """页面上对一张图的决定。两个下拉都默认空着，空着就是没点。"""
+    """页面上对一张图的决定。两个下拉都默认空着，空着就是没点。
+
+    `pcname` / `number` 是组头选定机器后带出来的那一份；空着就用文件名解析出的。
+    """
 
     filename: str
     env: str = ""
     category: str = ""
+    pcname: str = ""
+    number: str = ""
 
 
 @dataclass(frozen=True)
@@ -77,13 +82,15 @@ def plan_batch(
             continue
 
         parsed = image.parsed
+        pcname = (decision.pcname or "").strip() or parsed.pcname
+        number = (decision.number or "").strip() or parsed.number
         ready.append(
             PlannedCopy(
                 source_filename=image.filename,
                 target_name=build_target_name(
-                    number=parsed.number, pcname=parsed.pcname, env=env, category=category
+                    number=number, pcname=pcname, env=env, category=category
                 ),
-                pcname=parsed.pcname,
+                pcname=pcname,
                 env=env,
                 category=category,
             )
