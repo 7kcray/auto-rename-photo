@@ -55,11 +55,20 @@ def is_ultraviewer_id(value: str) -> bool:
     return bool(value) and all("0" <= character <= "9" for character in value)
 
 
+def forbidden_pcname_chars(value: str) -> str:
+    """值里出现过的非法字符，按出现顺序去重；空串就是没有。
+
+    挡住一张图时要把「是哪几个字符」说出来，所以判据不能只是一个布尔——
+    否则计划器得自己再扫一遍字符集，就成了第二份判据。
+    """
+    text = (value or "").strip()
+    return "".join(dict.fromkeys(character for character in text if character in PCNAME_FORBIDDEN))
+
+
 def is_valid_pcname(value: str) -> bool:
     """合法 PCNAME：去掉首尾空格后非空，且不含 Windows 文件名非法字符。
 
     大小写不做归一：`tcsb2` 就是 `tcsb2`，工具不替人改成 `TCSB2`。
     页面上的红框与服务端的拦截共用这一条判据，避免两边各说一套。
     """
-    text = (value or "").strip()
-    return bool(text) and not any(character in PCNAME_FORBIDDEN for character in text)
+    return bool((value or "").strip()) and not forbidden_pcname_chars(value)

@@ -13,6 +13,7 @@ from autorename.vocabulary import (
     CATEGORIES,
     UNDECIDED,
     canonical_env,
+    forbidden_pcname_chars,
     is_ultraviewer_id,
     is_valid_pcname,
 )
@@ -151,7 +152,8 @@ def _problems_of(category: str, env: str, pcname: str, ultraviewer_id: str) -> l
         problems.append("PCNAME 未定")
     elif not is_valid_pcname(pcname):
         # 页面会标红，但绕过页面直接打 API 也得挡住：名字会原样进文件名。
-        problems.append(f"PCNAME 含非法字符：{pcname}")
+        # 理由里既点名是哪几个字符，也带上原值，人不必回头猜是哪张卡上的哪一处。
+        problems.append(f"PCNAME 含非法字符「{forbidden_pcname_chars(pcname)}」：{pcname}")
     if not ultraviewer_id:
         problems.append("Ultraviewer ID 未填")
     elif not is_ultraviewer_id(ultraviewer_id):

@@ -227,7 +227,7 @@ class HandTypedPcnameTest(ServerTestCase):
 
         self.assertEqual(preview["ready"], [])
         self.assertEqual(landed["copied"], 0)
-        self.assertIn("PCNAME 含非法字符：TCSB/2", landed["blocked"][0]["reason"])
+        self.assertIn("PCNAME 含非法字符「/」：TCSB/2", landed["blocked"][0]["reason"])
 
 
 class ConfigPayloadTest(ServerTestCase):
