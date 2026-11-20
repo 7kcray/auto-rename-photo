@@ -117,7 +117,6 @@ python -m autorename --port 9000 --no-browser
 
 ## 已知限制与路线图
 
-- **实拍整批验收待做**：目前靠录制的 OCR 样本测试，12 张真图的整批比对还没跑（issue #8）。
 - 只有 Windows 版；OCR 与 `.bat` 启动器都依赖 Windows。
 
 ## 开发
