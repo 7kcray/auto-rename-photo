@@ -45,7 +45,8 @@ python -m autorename --port 9000 --no-browser
 ```
 
 - **ENV** 统一写成 `Server`、`Link1` 这种「首字母大写、其余小写」，配置里写错大小写也进不了文件名。
-- **类别** 是封闭词表，只有七个：`Analyse`、`Data`、`Group`、`Main`、`Spec`、`Test`、`Version`。判不准就是 `未定`，不会出现 `Database`、`Goup` 这类同义异名。
+- **类别** 是封闭词表，十六个：`Analyse`、`Data`、`Group`、`Main`、`Spec`、`Test`、`Version`、`Financial_Date`、`Negative`、`License`、`Report_Header`、`SSM`、`TIN`、`Bank`、`Company_Profile`、`Other`。判不准就是 `未定`，不会出现 `Database`、`Goup` 这类同义异名。大小写按下拉原样进文件名，不做归一：`SSM` 不会变成 `Ssm`，`Financial_Date` 的下划线照留。
+- **哪几类会被自动预判**：只有前七个有 OCR 规则。后九个（`Financial_Date` 起）扫描后一律落在「未定」，要逐张手点；`Other` 永远不自动预判——它不在「未定」里，兜底等于把认不出的图直接放过并落盘。
 - **Ultraviewer ID 与 PCNAME** 默认取自文件名；组头选定机器后以机器登记为准（不合规卡上的 ID 输入框会跟着锁成登记值，免得「填的是 A、落的是 B」）；没选机器时，手输的 ID 压过文件名。不合规的图没有文件名可依据，只能手输 ID、靠选机器补 PCNAME。
 - **Ultraviewer ID** 只收纯数字。全角数字、带连字符的 ID 进不了文件名，页面上会标红，落盘时也会被挡。
 - **同机同类多张**时按时间片段升序排号：首张是 `…-类别.png`，第二张起 `…-类别-2.png`、`…-类别-3.png`。编号只为防撞名，不表达顺序语义——改文件 mtime 不会改变谁拿 `-2`；不同机器、不同类别、不同 ENV 各自独立编号。没有时间片段的手动补全图排在最后，彼此按源文件名。
@@ -110,7 +111,7 @@ python -m autorename --port 9000 --no-browser
 python -m unittest discover -s tests -t .
 ```
 
-127 个用例，全部通过。OCR 在测试里一律喂 `tests/fixtures/ocr_texts.json` 里录好的真实文本，不跑真引擎。
+131 个用例，全部通过。OCR 在测试里一律喂 `tests/fixtures/ocr_texts.json` 里录好的真实文本，不跑真引擎。
 
 ```
 autorename/

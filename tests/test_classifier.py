@@ -1,4 +1,6 @@
-"""分类器：OCR 文本 → 7 类之一，或「未定」。
+"""分类器：OCR 文本 → 词表里的某一类，或「未定」。
+
+词表 16 类，规则只覆盖前七个；其余九个落在「未定」，由人点。
 
 12 张实拍图的文本录在 `fixtures/ocr_texts.json`，测试不跑真 OCR。
 类别以界面本身为准，人工标注一次，改规则时先看这张表。
@@ -116,6 +118,14 @@ class RuleTableTest(unittest.TestCase):
     def test_a_rule_with_a_legacy_misspelling_refuses_to_exist(self):
         with self.assertRaises(ValueError):
             Rule("Database", ("database",))
+
+    def test_no_rule_predicts_other(self):
+        """`Other` 是给人点的兜底，不是机器的兜底。
+
+        它不在「未定」里，一旦被规则命中，认不出的图会直接落盘成 `-Other.png`，
+        「宁可让人点一下」这条底线就没了。
+        """
+        self.assertNotIn("Other", {rule.category for rule in RULES})
 
 
 if __name__ == "__main__":

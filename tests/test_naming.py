@@ -37,11 +37,42 @@ class EnvCasingTest(unittest.TestCase):
 
 class VocabularyTest(unittest.TestCase):
     def test_category_vocabulary_is_closed_and_corrected(self):
-        self.assertEqual(len(CATEGORIES), 7)
+        self.assertEqual(len(CATEGORIES), 16)
         self.assertIn("Data", CATEGORIES)
         self.assertIn("Group", CATEGORIES)
         self.assertNotIn("Database", CATEGORIES)
         self.assertNotIn("Goup", CATEGORIES)
+
+    def test_the_nine_manual_categories_are_in_the_vocabulary(self):
+        """后九个没有 OCR 规则，但必须是合法类别——否则点了也落不了盘。"""
+        for expected in (
+            "Financial_Date",
+            "Negative",
+            "License",
+            "Report_Header",
+            "SSM",
+            "TIN",
+            "Bank",
+            "Company_Profile",
+            "Other",
+        ):
+            self.assertIn(expected, CATEGORIES)
+
+    def test_case_is_not_normalised_so_acronyms_survive(self):
+        """`SSM` / `TIN` 是缩写：词表里不许出现 `Ssm` / `Tin`，落盘也不收。"""
+        self.assertNotIn("Ssm", CATEGORIES)
+        self.assertNotIn("Tin", CATEGORIES)
+        with self.assertRaises(ValueError):
+            build_target_name(
+                ultraviewer_id="82331647", pcname="TCSB2", env="Server", category="Ssm"
+            )
+
+    def test_a_category_with_an_underscore_reaches_the_file_name(self):
+        name = build_target_name(
+            ultraviewer_id="82331647", pcname="TCSB2", env="Server", category="Financial_Date"
+        )
+
+        self.assertEqual(name, "(Server)82331647_TCSB2-Financial_Date.png")
 
     def test_default_env_options_cover_server_and_at_least_three_links(self):
         """规格：默认至少到 `Link3`，`Server` 打头。"""
