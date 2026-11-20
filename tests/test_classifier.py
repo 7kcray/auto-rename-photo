@@ -1,8 +1,6 @@
 """分类器：OCR 文本 → 词表里的某一类，或「未定」。
 
-词表 16 类，规则只覆盖前七个；其余九个落在「未定」，由人点。
-
-12 张实拍图的文本录在 `fixtures/ocr_texts.json`，测试不跑真 OCR。
+17 张实拍图的文本录在 `fixtures/ocr_texts.json`，测试不跑真 OCR。
 类别以界面本身为准，人工标注一次，改规则时先看这张表。
 """
 
@@ -32,21 +30,30 @@ EXPECTED = {
 }
 
 
+# 5 张新样本的人工标注：类别取自文件名，窗口内容逐张核对过。
+MANUAL_EXPECTED = {
+    "113267544_LAPTOP-SVL3F0SP(Financial_Date.png": "Financial_Date",
+    "113267544_LAPTOP-SVL3F0SP(License.png": "License",
+    "113267544_LAPTOP-SVL3F0SP(Report Header.png": "Report_Header",
+    "113341216_LAPTOP-G59BTH4M(Bank.png": "Bank",
+    "87005828_OFFICE-KELVIN(Negative.png": "Negative",
+}
+
+
 def _fixtures() -> dict[str, list[str]]:
     return json.loads(FIXTURES.read_text(encoding="utf-8"))
 
 
 class RealBatchTest(unittest.TestCase):
-    """验收：12 张实拍图，每张都判对。"""
+    """验收：17 张实拍图，每张都判对。"""
 
     def setUp(self):
         self.texts = _fixtures()
 
     def test_every_recorded_screenshot_is_recognised(self):
-        self.assertEqual(len(self.texts), 12)
-        self.assertEqual(set(self.texts), set(EXPECTED))
+        self.assertEqual(set(self.texts), set(EXPECTED) | set(MANUAL_EXPECTED))
 
-        for filename, expected in EXPECTED.items():
+        for filename, expected in (EXPECTED | MANUAL_EXPECTED).items():
             with self.subTest(filename=filename):
                 self.assertEqual(classify(self.texts[filename]), expected)
 
@@ -103,6 +110,82 @@ class BoundaryTextTest(unittest.TestCase):
         self.assertEqual(classify("DCF Database"), classify(["DCF", "Database"]))
 
 
+class ManualCategoryTest(unittest.TestCase):
+    """后五个类别：判据是窗口里的字段标签，不是「银行」「负数」这种单词。"""
+
+    def setUp(self):
+        self.texts = _fixtures()
+
+    def test_activation_window_is_not_swallowed_by_spec(self):
+        """激活窗口里有 `Product ID`，Spec 的触发词也有——顺序错了这张就变 Spec。"""
+        self.assertEqual(
+            classify(self.texts["113267544_LAPTOP-SVL3F0SP(License.png"]), "License"
+        )
+
+    def test_account_chart_is_bank_not_license(self):
+        """许可证窗口里也有 `Foreign Bank`、`Bank Reconciliation`，所以判据只用 `Bank Account`。"""
+        self.assertEqual(classify(self.texts["113341216_LAPTOP-G59BTH4M(Bank.png"]), "Bank")
+
+    def test_report_header_window_wins_over_its_company_profile_title(self):
+        """窗口标题就是 `Company Profile`（另一个类别名），这一页仍须判 Report_Header。"""
+        self.assertEqual(
+            classify(self.texts["113267544_LAPTOP-SVL3F0SP(Report Header.png"]), "Report_Header"
+        )
+
+    def test_the_two_options_dialogs_do_not_swap(self):
+        """Financial_Date 与 Negative 是同一个 Options 对话框，连标签页都一样。"""
+        self.assertEqual(
+            classify(self.texts["113267544_LAPTOP-SVL3F0SP(Financial_Date.png"]), "Financial_Date"
+        )
+        self.assertEqual(classify(self.texts["87005828_OFFICE-KELVIN(Negative.png"]), "Negative")
+
+    def test_a_single_misread_label_is_backed_up_by_the_other(self):
+        """`Financial Start Period` 与 `System Conversion Date` 是两个独立标签。
+
+        读坏一个，另一个还立得住；两个都坏才退回「未定」——多短语规则的用意就在这。
+        """
+        lines = self.texts["113267544_LAPTOP-SVL3F0SP(Financial_Date.png"]
+        one_broken = [
+            line.replace("Financial Start Period", "Financia1 Start Period") for line in lines
+        ]
+        self.assertEqual(classify(one_broken), "Financial_Date")
+
+        both_broken = [
+            line.replace("System Conversion Date", "System Converslon Date") for line in one_broken
+        ]
+        self.assertEqual(classify(both_broken), UNDECIDED)
+
+
+class ShapeEvidenceTest(unittest.TestCase):
+    """结构证据：格式本身就是判据，标题被截掉也认得出。"""
+
+    def test_a_license_key_alone_is_enough(self):
+        self.assertEqual(classify(["VMKS-X8VP-RL6F-8JV4-2EEV-SRKV-9XQM-JKCW"]), "License")
+
+    def test_a_license_key_read_in_lowercase_still_counts(self):
+        self.assertEqual(classify(["vmks-x8vp-rl6f-8jv4-2eev-srkv-9xqm-jkcw"]), "License")
+
+    def test_a_windows_product_id_is_not_mistaken_for_a_license_key(self):
+        """Windows 规格页的产品 ID 是 5 段，形状对不上激活码。"""
+        self.assertNotEqual(classify(["Product ID 00330-80000-00000-AA123"]), "License")
+
+
+class WeakWordTest(unittest.TestCase):
+    """单词级触发词是误判的主要来源：这几个词单独出现时必须留在「未定」。"""
+
+    def test_bare_words_are_not_enough(self):
+        for text in (
+            ["Bank"],
+            ["Negative"],
+            ["Report"],
+            ["License"],
+            ["Bank Reconciliation", "Foreign Bank"],
+            ["Maintain Account"],
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(classify(text), UNDECIDED)
+
+
 class RuleTableTest(unittest.TestCase):
     """规则表本身的约束：顺序与词表。"""
 
@@ -118,6 +201,15 @@ class RuleTableTest(unittest.TestCase):
     def test_a_rule_with_a_legacy_misspelling_refuses_to_exist(self):
         with self.assertRaises(ValueError):
             Rule("Database", ("database",))
+
+    def test_a_rule_without_any_evidence_refuses_to_exist(self):
+        """两类证据都空 = 永远不可能命中，是写错了，不是「暂时不用」。"""
+        with self.assertRaises(ValueError):
+            Rule("Bank")
+
+    def test_a_rule_with_a_broken_shape_refuses_to_exist(self):
+        with self.assertRaises(ValueError):
+            Rule("Bank", ("bank account",), shapes=("(unclosed",))
 
     def test_no_rule_predicts_other(self):
         """`Other` 是给人点的兜底，不是机器的兜底。

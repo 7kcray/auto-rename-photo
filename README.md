@@ -46,7 +46,19 @@ python -m autorename --port 9000 --no-browser
 
 - **ENV** 统一写成 `Server`、`Link1` 这种「首字母大写、其余小写」，配置里写错大小写也进不了文件名。
 - **类别** 是封闭词表，十六个：`Analyse`、`Data`、`Group`、`Main`、`Spec`、`Test`、`Version`、`Financial_Date`、`Negative`、`License`、`Report_Header`、`SSM`、`TIN`、`Bank`、`Company_Profile`、`Other`。判不准就是 `未定`，不会出现 `Database`、`Goup` 这类同义异名。大小写按下拉原样进文件名，不做归一：`SSM` 不会变成 `Ssm`，`Financial_Date` 的下划线照留。
-- **哪几类会被自动预判**：只有前七个有 OCR 规则。后九个（`Financial_Date` 起）扫描后一律落在「未定」，要逐张手点；`Other` 永远不自动预判——它不在「未定」里，兜底等于把认不出的图直接放过并落盘。
+- **哪几类会被自动预判**：12 类有 OCR 规则（前七个 + `Financial_Date`、`Negative`、`License`、`Report_Header`、`Bank`）。`SSM`、`TIN`、`Company_Profile`、`Other` 没有规则，扫描后一律落在「未定」，要逐张手点；`Other` 永远不自动预判——它不在「未定」里，兜底等于把认不出的图直接放过并落盘。
+
+  判据只认窗口里的**字段标签**，不认「银行」「负数」这种单词——单词级触发词是误判的主要来源：
+
+  | 类别 | 判据（命中任一即算） | 边界与陷阱 |
+  | --- | --- | --- |
+  | `Financial_Date` | `Financial Start Period`、`System Conversion Date` | 与 `Negative` 同为 Options 对话框，标签页都一样，只能靠这两个字段分开 |
+  | `Negative` | `Negative Stock Quantity` | 单写 `Negative` 不认；`Numeric Value Display Format` 也不算证据 |
+  | `License` | `Product Activation`、`Activation Code`、`Print Activation Request`、8 组 4 位的许可证号 | 窗口里有 `Product ID`，与规格页撞词——所以这条规则排在 `Spec` **之前** |
+  | `Report_Header` | `Set Report Header`、`Report Footer`、`This Software is Licensed to Company Name`、`Reg. No (New)` | 窗口标题是 `Company Profile`，但那是**另一个**类别，别混 |
+  | `Bank` | `Bank Account`、`Cash At Bank` | 刻意不认 `Foreign Bank`、`Bank Reconciliation`——许可证窗口里这两个词都有 |
+
+  `License` 多一道结构校验：`VMKS-X8VP-RL6F-8JV4-2EEV-SRKV-9XQM-JKCW` 这种「8 组 4 位」的形状几乎不会误撞，标题被截掉、字被读丢也照样认得出；Windows 规格页那种 5 段产品 ID 形状对不上，不会被当成激活码。其余四类的日期/账号没有可校验的格式（`1/4/2025` 满屏都是），拿形状当证据只会制造误判，所以只用短语。
 - **Ultraviewer ID 与 PCNAME** 默认取自文件名；组头选定机器后以机器登记为准（不合规卡上的 ID 输入框会跟着锁成登记值，免得「填的是 A、落的是 B」）；没选机器时，手输的 ID 压过文件名。不合规的图没有文件名可依据，只能手输 ID、靠选机器补 PCNAME。
 - **Ultraviewer ID** 只收纯数字。全角数字、带连字符的 ID 进不了文件名，页面上会标红，落盘时也会被挡。
 - **同机同类多张**时按时间片段升序排号：首张是 `…-类别.png`，第二张起 `…-类别-2.png`、`…-类别-3.png`。编号只为防撞名，不表达顺序语义——改文件 mtime 不会改变谁拿 `-2`；不同机器、不同类别、不同 ENV 各自独立编号。没有时间片段的手动补全图排在最后，彼此按源文件名。
@@ -111,7 +123,7 @@ python -m autorename --port 9000 --no-browser
 python -m unittest discover -s tests -t .
 ```
 
-131 个用例，全部通过。OCR 在测试里一律喂 `tests/fixtures/ocr_texts.json` 里录好的真实文本，不跑真引擎。
+142 个用例，全部通过。OCR 在测试里一律喂 `tests/fixtures/ocr_texts.json` 里录好的真实文本，不跑真引擎。
 
 ```
 autorename/
