@@ -212,7 +212,7 @@ class PcnameValidationTest(unittest.TestCase):
         )
 
         self.assertEqual(plan.ready, ())
-        self.assertEqual(plan.blocked[0].reason, "PCNAME 含非法字符：TCSB/2")
+        self.assertEqual(plan.blocked[0].reason, "PCNAME 含非法字符「/」：TCSB/2")
 
     def test_every_windows_forbidden_character_blocks_the_card(self):
         """九个字符一个都不能漏：漏一个就会落出一个打不开的文件名。"""
@@ -225,7 +225,19 @@ class PcnameValidationTest(unittest.TestCase):
                 )
 
                 self.assertEqual(plan.ready, ())
-                self.assertIn("PCNAME 含非法字符", plan.blocked[0].reason)
+                self.assertEqual(
+                    plan.blocked[0].reason, f"PCNAME 含非法字符「{character}」：TCSB{character}2"
+                )
+
+    def test_the_reason_names_each_offending_character_once_in_order(self):
+        """理由要说出「是哪几个字符」：重复的只报一次，按出现顺序。"""
+        plan = plan_batch(
+            _scan(CONFIRMED),
+            [Decision(CONFIRMED, env="Server", category="Spec", pcname="A//B:C")],
+            TARGET,
+        )
+
+        self.assertEqual(plan.blocked[0].reason, "PCNAME 含非法字符「/:」：A//B:C")
 
     def test_a_hand_typed_pcname_is_taken_as_typed(self):
         """手填的值只去首尾空格：大小写与连字符照原样进文件名，工具不替人归一。"""
