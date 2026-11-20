@@ -198,10 +198,16 @@ class HandTypedPcnameTest(ServerTestCase):
 
     def test_surrounding_spaces_are_trimmed_before_the_name_is_built(self):
         self.make_source(NAMES[0])
+        body = self.body("  BB  ")
 
-        preview = self.post("/api/preview", self.body("  BB  "))
+        preview = self.post("/api/preview", body)
+        self.post("/api/rename", body)
 
         self.assertEqual(preview["ready"][0]["target"], "(Server)82331647_BB-Spec.png")
+        self.assertEqual(
+            sorted(path.name for path in (self.source / "Renamed").glob("*.png")),
+            ["(Server)82331647_BB-Spec.png"],
+        )
 
     def test_an_empty_pcname_falls_back_to_the_one_in_the_filename(self):
         """清空输入框等于「我没改过」：交回文件名解析出的值，不算未定。"""

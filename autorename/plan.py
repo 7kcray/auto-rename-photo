@@ -22,9 +22,10 @@ from autorename.vocabulary import (
 class Decision:
     """页面上对一张图的决定。两个下拉都默认空着，空着就是没点。
 
-    `pcname` / `ultraviewer_id` 是页面上带出来的那一份：合规的图由组头选定机器带出，
-    不合规的图只能靠人填 ID、靠组头选机器补 PCNAME。空着就用文件名解析出的——
-    文件名不合规时没有可回退的值，缺什么就挡什么。
+    `pcname` / `ultraviewer_id` 是页面上带出来的那一份：组头选定的机器、本卡手改的
+    PCNAME、手输的 ID，三处都从这里下来。空着就用文件名解析出的——文件名不合规时
+    没有可回退的值，缺什么就挡什么。手改的 PCNAME 会原样进文件名，所以它也得过
+    「合法 PCNAME」那一关。
     """
 
     filename: str

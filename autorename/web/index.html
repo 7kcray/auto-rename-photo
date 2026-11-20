@@ -242,6 +242,8 @@
   .pcname-row { display: flex; gap: 6px; }
 
   .pcname-row .id-input { flex: 1; min-width: 0; width: auto; }
+  /* 只读不是禁用：锁定的卡照样要能选中复制，光标别报「碰不得」。 */
+  .pcname-row .id-input.locked { cursor: text; }
 
   .lock-button {
     flex: none;
@@ -255,7 +257,7 @@
     padding: 0 9px;
   }
 
-  .lock-button:hover { color: var(--text); border-color: #3a4250; filter: none; }
+  .lock-button:not(:disabled):hover { color: var(--text); border-color: #3a4250; filter: none; }
 
   .lock-button.locked {
     background: rgba(76, 141, 255, .1);
@@ -472,10 +474,12 @@
   }
 
   // 非法字符集由服务端下发（/api/config）：页面标红与服务端拦截共用同一条判据，
-  // 不在这里另抄一份。空着不算「非法」——那是「未定」，交给可落盘判定去挡。
+  // 不在这里另抄一份。先去首尾空格再判，和服务端 `is_valid_pcname` 一模一样：
+  // 全是空格等于没填（那是「未定」），不算非法字符。
   function isValidPcname(text) {
-    if (!text) return false;
-    for (const character of text) {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return false;
+    for (const character of trimmed) {
       if (config.pcnameForbidden.has(character)) return false;
     }
     return true;
@@ -668,25 +672,35 @@
   }
 
   // 锁只改「能不能改」：值不变、预览名不变、可落盘判定不变，也不问服务端。
-  // 组头选了机器时这张卡本来就不该手改，于是锁没锁都是只读——锁只是别让人手滑。
+  // 组头选了机器时这张卡本来就不该手改：锁没锁都是只读，锁头也停用——那个值由登记
+  // 说了算，锁住它只会把「这张已确认」的错觉安在一张随时会被机器覆盖的卡上。
   function syncPcnameLock(record) {
-    const driven = hasMachine(record);
-    const readOnly = record.locked || driven;
+    const machine = record.group && record.group.machine;
+    const readOnly = record.locked || Boolean(machine);
+    const shown = record.pcnameInput.value;
+
     record.pcnameInput.readOnly = readOnly;
     record.pcnameInput.classList.toggle("locked", readOnly);
-    record.pcnameInput.title = driven
-      ? "本组已选定机器：PCNAME 以机器登记为准（" + record.group.machine.pcname + "）"
+    // 锁定态是单行只读框，长名字放不下：完整值挂在 title 上，指一下就能看全。
+    record.pcnameInput.title = machine
+      ? "本组已选定机器：PCNAME 以机器登记为准（" + machine.pcname + "）"
       : record.locked
-        ? "这张卡的 PCNAME 已锁定：点右边的锁头可以解开再改"
+        ? "这张卡的 PCNAME 已锁定：" + (shown || "（还没填）") + " · 点右边的锁头可以解开再改"
         : "这张卡的 PCNAME：改了就按你填的落盘，清空则回到派生值";
+
+    record.lockButton.disabled = Boolean(machine);
     record.lockButton.classList.toggle("locked", record.locked);
     record.lockButton.setAttribute("aria-pressed", record.locked ? "true" : "false");
     record.lockButton.setAttribute(
       "aria-label",
       "PCNAME 锁（" + record.image.filename + "）：" +
-        (record.locked ? "已锁定，点一下解锁" : "未锁定，点一下锁定")
+        (machine
+          ? "本组已选定机器，PCNAME 以登记为准，这张卡不用锁"
+          : record.locked ? "已锁定，点一下解锁" : "未锁定，点一下锁定")
     );
-    record.lockButton.title = record.locked ? "解锁这张卡的 PCNAME" : "锁定这张卡的 PCNAME";
+    record.lockButton.title = machine
+      ? "本组已选定机器：PCNAME 以登记为准，这张卡不用锁"
+      : record.locked ? "解锁这张卡的 PCNAME" : "锁定这张卡的 PCNAME";
   }
 
   function updateGroupCount(group) {
