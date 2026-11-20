@@ -4,6 +4,7 @@
 # Sample screenshot sets kept on disk as run evidence, not versioned
 Akarumi Before Edit/
 Akarumi After Edit/
+Sample4Train/
 
 # Local scratch (spec drafts before they land on the issue tracker)
 .scratch/
