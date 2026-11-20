@@ -171,6 +171,7 @@
   }
 
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips:empty { display: none; }
 
   .chip {
     background: #11141a;
@@ -237,6 +238,34 @@
   .id-input.bad { border-color: rgba(255, 92, 92, .6); }
   .id-input::placeholder { color: #5d6474; }
   .id-input.locked { background: #0d1015; color: var(--muted); cursor: not-allowed; }
+
+  .pcname-row { display: flex; gap: 6px; }
+
+  .pcname-row .id-input { flex: 1; min-width: 0; width: auto; }
+
+  .lock-button {
+    flex: none;
+    background: #11141a;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 9px;
+  }
+
+  .lock-button:hover { color: var(--text); border-color: #3a4250; filter: none; }
+
+  .lock-button.locked {
+    background: rgba(76, 141, 255, .1);
+    border-color: rgba(76, 141, 255, .45);
+    color: var(--accent);
+  }
+
+  .lock-button svg { width: 14px; height: 14px; display: block; }
+
+  .lock-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   .match-hint {
     font-size: 11px;
@@ -391,7 +420,14 @@
   const lightboxImage = document.getElementById("lightbox-image");
   const lightboxCaption = document.getElementById("lightbox-caption");
 
-  const config = { envs: [], categories: [], undecided: "未定", template: "({env}){ultraviewer_id}_{pcname}-{category}.png" };
+  const config = { envs: [], categories: [], undecided: "未定", template: "({env}){ultraviewer_id}_{pcname}-{category}.png", pcnameForbidden: new Set() };
+
+  // 线条锁头：描边吃 currentColor，解锁时 muted、锁定时 accent，图标本身不换。
+  const LOCK_ICON =
+    '<svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">' +
+    '<rect x="3.2" y="7" width="9.6" height="6.4" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/>' +
+    '<path d="M5.6 7V5.4a2.4 2.4 0 0 1 4.8 0V7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>' +
+    "</svg>";
 
   let currentDirectory = "";
   let currentCount = 0;
@@ -435,18 +471,51 @@
     return /^[0-9]+$/.test(text);
   }
 
-  // 组头选定的机器说了算：PCNAME 与 Ultraviewer ID 一次带出；没选就用文件名解析出的。
-  // 文件名不合规的图没有解析值可回退：组头也没选时，手输的 ID 命中登记机器就借它的
-  // PCNAME——只把 PCNAME 带出来，卡片留在不合规组，不搬组。
+  // 非法字符集由服务端下发（/api/config）：页面标红与服务端拦截共用同一条判据，
+  // 不在这里另抄一份。空着不算「非法」——那是「未定」，交给可落盘判定去挡。
+  function isValidPcname(text) {
+    if (!text) return false;
+    for (const character of text) {
+      if (config.pcnameForbidden.has(character)) return false;
+    }
+    return true;
+  }
+
+  function hasMachine(record) {
+    return Boolean(record.group && record.group.machine);
+  }
+
+  // 组头选定的机器说了算：PCNAME 与 Ultraviewer ID 一次带出。
+  // 没选机器时，本卡手改的 PCNAME 压过派生的那一份；手改值只在本组未选机器时生效，
+  // 一选机器就让位——ID 跟着机器走，PCNAME 单飞会让一张卡对不上号。
+  // 派生值（derived）单独留一份：输入框要从机器退回时得知道该显示什么。
   function effectiveIdentity(record) {
     const machine = record.group && record.group.machine;
-    if (machine) return { pcname: machine.pcname, ultraviewer_id: machine.ultraviewer_id, matched: null };
-    if (record.image.compliant) {
-      return { pcname: record.image.pcname, ultraviewer_id: record.image.ultraviewer_id, matched: null };
+    if (machine) {
+      return {
+        pcname: machine.pcname,
+        derived: machine.pcname,
+        ultraviewer_id: machine.ultraviewer_id,
+        matched: null,
+      };
     }
+
+    // 文件名不合规的图没有解析值可回退：手输的 ID 命中登记机器就借它的 PCNAME——
+    // 只把 PCNAME 带出来，卡片留在不合规组，不搬组。
     const typed = record.typedId || "";
-    const matched = typed ? machines.find((item) => item.ultraviewer_id === typed) || null : null;
-    return { pcname: matched ? matched.pcname : "", ultraviewer_id: typed, matched };
+    const matched = record.image.compliant || !typed
+      ? null
+      : machines.find((item) => item.ultraviewer_id === typed) || null;
+    const derived = record.image.compliant
+      ? record.image.pcname
+      : matched ? matched.pcname : "";
+
+    return {
+      pcname: record.manualPcname || derived,
+      derived,
+      ultraviewer_id: record.image.compliant ? record.image.ultraviewer_id : typed,
+      matched,
+    };
   }
 
   // 模板由服务端下发，页面不另抄一份命名规则；ENV 的写法也由服务端给的选项决定。
@@ -477,13 +546,14 @@
     });
   }
 
-  // 能落盘 = 名字四段都齐：ENV、类别、ID（纯数字）、PCNAME。服务端会再验一遍。
+  // 能落盘 = 名字四段都齐：ENV、类别、ID（纯数字）、PCNAME（不含非法字符）。
+  // 服务端会再验一遍。
   function isReady(record) {
     const identity = effectiveIdentity(record);
     return record.envSelect.value !== "" &&
       record.categorySelect.value !== config.undecided &&
       isDigits(identity.ultraviewer_id) &&
-      identity.pcname !== "";
+      isValidPcname(identity.pcname);
   }
 
   // 撞名编号由服务端算（同机同类第二张起 -2、-3）：页面不另抄一份规则，
@@ -544,10 +614,9 @@
     record.preview.className = "preview" + (ready ? " ready" : "");
 
     if (record.ultraviewerIdValue) record.ultraviewerIdValue.textContent = identity.ultraviewer_id;
-    record.pcnameValue.textContent = identity.pcname || "—";
     if (record.idInput) {
       // 组头选了机器时 ID 以登记为准：输入框跟着显示并锁住，免得「填的是 A、落的是 B」。
-      const locked = Boolean(record.group && record.group.machine);
+      const locked = hasMachine(record);
       record.idInput.readOnly = locked;
       record.idInput.classList.toggle("locked", locked);
       record.idInput.title = locked
@@ -562,6 +631,26 @@
       const typed = record.idInput.value.trim();
       record.idInput.classList.toggle("bad", !locked && typed !== "" && !isDigits(typed));
     }
+
+    // PCNAME 输入框只在三种情况下被改写，别的时候一个字都不动（正在打字时尤其不能碰）：
+    // 组头选了机器 → 显示登记值；刚从机器退回 → 恢复手改值或派生值；
+    // 没手改过而派生值变了（比如手输 ID 命中了另一台机器）→ 跟着派生值走。
+    // 人自己清空后派生值没变，就不回填——空框就是「我没改过」。
+    if (hasMachine(record)) {
+      record.pcnameInput.value = identity.pcname;
+    } else if (record.wasMachine) {
+      record.pcnameInput.value = record.manualPcname || identity.derived;
+    } else if (!record.manualPcname && identity.derived !== record.lastDerived) {
+      record.pcnameInput.value = identity.derived;
+    }
+    record.wasMachine = hasMachine(record);
+    record.lastDerived = identity.derived;
+    // 有字且不合法才标红：空框是「未定」，由卡片边框说话，不算非法字符。
+    record.pcnameInput.classList.toggle(
+      "bad", Boolean(identity.pcname) && !isValidPcname(identity.pcname)
+    );
+    syncPcnameLock(record);
+
     if (record.matchHint) {
       record.matchHint.hidden = !identity.matched;
       record.matchHint.textContent = identity.matched
@@ -576,6 +665,28 @@
 
     updateGroupCount(record.group);
     updateCounts();
+  }
+
+  // 锁只改「能不能改」：值不变、预览名不变、可落盘判定不变，也不问服务端。
+  // 组头选了机器时这张卡本来就不该手改，于是锁没锁都是只读——锁只是别让人手滑。
+  function syncPcnameLock(record) {
+    const driven = hasMachine(record);
+    const readOnly = record.locked || driven;
+    record.pcnameInput.readOnly = readOnly;
+    record.pcnameInput.classList.toggle("locked", readOnly);
+    record.pcnameInput.title = driven
+      ? "本组已选定机器：PCNAME 以机器登记为准（" + record.group.machine.pcname + "）"
+      : record.locked
+        ? "这张卡的 PCNAME 已锁定：点右边的锁头可以解开再改"
+        : "这张卡的 PCNAME：改了就按你填的落盘，清空则回到派生值";
+    record.lockButton.classList.toggle("locked", record.locked);
+    record.lockButton.setAttribute("aria-pressed", record.locked ? "true" : "false");
+    record.lockButton.setAttribute(
+      "aria-label",
+      "PCNAME 锁（" + record.image.filename + "）：" +
+        (record.locked ? "已锁定，点一下解锁" : "未锁定，点一下锁定")
+    );
+    record.lockButton.title = record.locked ? "解锁这张卡的 PCNAME" : "锁定这张卡的 PCNAME";
   }
 
   function updateGroupCount(group) {
@@ -614,7 +725,7 @@
       // 组头选了机器，ID 就跟着锁成登记值；没选才是逐张填。
       group.keyEl.textContent = machine
         ? "PCNAME " + identity.pcname + " · ID 取登记值"
-        : "ID 逐张填 · PCNAME 靠选机器或 ID 识别带出";
+        : "ID 逐张填 · PCNAME 逐张填或选机器带出";
     } else {
       group.keyEl.textContent = identity.pcname
         ? "PCNAME " + identity.pcname + " · Ultraviewer ID " + identity.ultraviewer_id
@@ -657,17 +768,16 @@
     name.textContent = image.filename;
     meta.appendChild(name);
 
-    // 不合规的图没有可解析的值：ID 留一个输入框，PCNAME 交给组头选机器或 ID 识别。
+    // 不合规的图没有可解析的值：ID 留一个输入框；PCNAME 与合规图一样是「输入框 + 锁头」。
     let idInput = null;
     let matchHint = null;
     let idChip = null;
-    const pcnameChip = chip("PCNAME", image.compliant ? image.pcname : "");
     const chips = document.createElement("div");
     chips.className = "chips";
 
     if (image.compliant) {
       idChip = chip("Ultraviewer ID", image.ultraviewer_id);
-      chips.append(idChip, pcnameChip, chip("时间", image.time_fragment));
+      chips.append(idChip, chip("时间", image.time_fragment));
       meta.appendChild(chips);
     } else {
       const badge = document.createElement("span");
@@ -689,9 +799,30 @@
       matchHint.hidden = true;
       meta.appendChild(matchHint);
 
-      chips.append(pcnameChip);
+      // 这一组没有 ID 与时间可摆，chips 行留空（空行不占位），让两张卡的版式对齐。
       meta.appendChild(chips);
     }
+
+    // PCNAME 独占一行、摆在 chips 下方：这张卡最后叫什么名字，人可以就地改。
+    const pcnameRow = document.createElement("div");
+    pcnameRow.className = "pcname-row";
+
+    const pcnameInput = document.createElement("input");
+    pcnameInput.className = "id-input";
+    pcnameInput.type = "text";
+    pcnameInput.spellcheck = false;
+    pcnameInput.setAttribute("aria-label", "PCNAME（" + image.filename + "）");
+    pcnameInput.placeholder = image.compliant
+      ? "PCNAME（清空则回到文件名里的值）"
+      : "PCNAME（手填，或选机器带出）";
+
+    const lockButton = document.createElement("button");
+    lockButton.type = "button";
+    lockButton.className = "lock-button";
+    lockButton.innerHTML = LOCK_ICON;
+
+    pcnameRow.append(pcnameInput, lockButton);
+    meta.appendChild(pcnameRow);
 
     const selects = document.createElement("div");
     selects.className = "selects";
@@ -743,12 +874,25 @@
       preview,
       idInput,
       matchHint,
+      pcnameInput,
+      lockButton,
       // 手输的 ID 单独记一份：组头选机器时输入框被锁成登记值，取消选机器后要能还原。
       typedId: "",
       wasLocked: false,
+      // 本卡手改的 PCNAME：空着就是「我没改过」，交回派生逻辑。锁状态不进 decisions。
+      manualPcname: "",
+      locked: false,
+      wasMachine: false,
+      lastDerived: "",
       ultraviewerIdValue: idChip ? idChip.querySelector("b") : null,
-      pcnameValue: pcnameChip.querySelector("b"),
     };
+
+    // 输入框预填当前带出的那一份：一眼能看出会落成什么名字，不用先清空再重打。
+    const identity = effectiveIdentity(record);
+    pcnameInput.value = identity.pcname;
+    record.lastDerived = identity.derived;
+    record.wasMachine = hasMachine(record);
+
     categorySelect.addEventListener("change", refreshAll);
     envSelect.addEventListener("change", refreshAll);
     if (idInput) {
@@ -757,6 +901,15 @@
         refreshAll();
       });
     }
+    pcnameInput.addEventListener("input", () => {
+      record.manualPcname = pcnameInput.value.trim();
+      refreshAll();
+    });
+    // 锁只改可编辑性：不重算预览、不发请求——值没变，多一次往返只会打断输入焦点。
+    lockButton.addEventListener("click", () => {
+      record.locked = !record.locked;
+      syncPcnameLock(record);
+    });
     return { card, record };
   }
 
@@ -987,6 +1140,7 @@
       config.envs = payload.envs || [];
       config.categories = payload.categories || [];
       config.undecided = payload.undecided || "未定";
+      config.pcnameForbidden = new Set(payload.pcname_forbidden || []);
       machines = payload.machines || [];
 
       const hint = document.createElement("span");

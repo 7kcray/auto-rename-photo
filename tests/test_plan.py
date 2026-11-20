@@ -201,6 +201,45 @@ class NonCompliantImageTest(unittest.TestCase):
         self.assertEqual(plan.ready[0].target_name, "(Server)99999999_TCSB2-Spec.png")
 
 
+class PcnameValidationTest(unittest.TestCase):
+    """PCNAME 现在可以手改，改出来的名字照样进文件名：非法字符得当场挡住。"""
+
+    def test_a_hand_typed_pcname_with_a_slash_is_blocked_and_named(self):
+        plan = plan_batch(
+            _scan(CONFIRMED),
+            [Decision(CONFIRMED, env="Server", category="Spec", pcname="TCSB/2")],
+            TARGET,
+        )
+
+        self.assertEqual(plan.ready, ())
+        self.assertEqual(plan.blocked[0].reason, "PCNAME 含非法字符：TCSB/2")
+
+    def test_every_windows_forbidden_character_blocks_the_card(self):
+        """九个字符一个都不能漏：漏一个就会落出一个打不开的文件名。"""
+        for character in '\\/:*?"<>|':
+            with self.subTest(character=character):
+                plan = plan_batch(
+                    _scan(CONFIRMED),
+                    [Decision(CONFIRMED, env="Server", category="Spec", pcname="TCSB" + character + "2")],
+                    TARGET,
+                )
+
+                self.assertEqual(plan.ready, ())
+                self.assertIn("PCNAME 含非法字符", plan.blocked[0].reason)
+
+    def test_a_hand_typed_pcname_is_taken_as_typed(self):
+        """手填的值只去首尾空格：大小写与连字符照原样进文件名，工具不替人归一。"""
+        plan = plan_batch(
+            _scan(CONFIRMED),
+            [Decision(CONFIRMED, env="Server", category="Spec", pcname="  tcsb-2  ")],
+            TARGET,
+        )
+
+        self.assertEqual(plan.blocked, ())
+        self.assertEqual(plan.ready[0].pcname, "tcsb-2")
+        self.assertEqual(plan.ready[0].target_name, "(Server)82331647_tcsb-2-Spec.png")
+
+
 class CollisionNumberingTest(unittest.TestCase):
     """同机同类多张：首张不带数字后缀，第二张起 `-2`、`-3`，互不覆盖。"""
 
