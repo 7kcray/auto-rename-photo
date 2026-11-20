@@ -1,4 +1,4 @@
-"""封闭词表：16 个类别、ENV 选项，以及 ENV 的大小写规范。
+"""封闭词表：16 个类别、ENV 选项、ENV 的大小写规范，以及「什么算合法 PCNAME」。
 
 类别是封闭的：判不准就留在「未定」，不允许出现同义异名——`Database` 归 `Data`、
 `Goup` 归 `Group`，这两个错拼一个字都不许进文件名。
@@ -34,6 +34,9 @@ CATEGORIES = (
 UNDECIDED = "未定"
 DEFAULT_ENVS = ("Server", "Link1", "Link2", "Link3")
 
+# Windows 文件名里不许出现的九个字符。PCNAME 会原样进目标文件名，所以它也得躲开它们。
+PCNAME_FORBIDDEN = '\\/:*?"<>|'
+
 
 def canonical_env(value: str) -> str:
     """把任意写法收成 `Server` / `Link1`；空串原样返回空串。"""
@@ -50,3 +53,13 @@ def is_ultraviewer_id(value: str) -> bool:
     页面上手输的都得过这一关，所以判据只此一份。
     """
     return bool(value) and all("0" <= character <= "9" for character in value)
+
+
+def is_valid_pcname(value: str) -> bool:
+    """合法 PCNAME：去掉首尾空格后非空，且不含 Windows 文件名非法字符。
+
+    大小写不做归一：`tcsb2` 就是 `tcsb2`，工具不替人改成 `TCSB2`。
+    页面上的红框与服务端的拦截共用这一条判据，避免两边各说一套。
+    """
+    text = (value or "").strip()
+    return bool(text) and not any(character in PCNAME_FORBIDDEN for character in text)

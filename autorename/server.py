@@ -16,7 +16,7 @@ from autorename.nameparse import PNG_EXTENSION
 from autorename.ocr import OcrProvider
 from autorename.plan import Decision, Plan, plan_batch
 from autorename.scanner import DirectoryUnusable, scan_directory
-from autorename.vocabulary import CATEGORIES, UNDECIDED
+from autorename.vocabulary import CATEGORIES, PCNAME_FORBIDDEN, UNDECIDED
 
 LOOPBACK = "127.0.0.1"
 _WEB_ROOT = Path(__file__).parent / "web"
@@ -87,6 +87,8 @@ class ToolRequestHandler(BaseHTTPRequestHandler):
                 "categories": list(CATEGORIES),
                 "undecided": UNDECIDED,
                 "template": TEMPLATE,
+                # 「什么算合法 PCNAME」的判据只在词表里写一份，字符集下发给页面标红用。
+                "pcname_forbidden": list(PCNAME_FORBIDDEN),
                 "config_path": options.path,
                 "warning": options.warning,
                 "machines": [machine.to_payload() for machine in registry.machines],

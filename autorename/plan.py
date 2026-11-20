@@ -9,16 +9,23 @@ from typing import Sequence
 
 from autorename.naming import build_target_name, with_sequence
 from autorename.scanner import ScanResult
-from autorename.vocabulary import CATEGORIES, UNDECIDED, canonical_env, is_ultraviewer_id
+from autorename.vocabulary import (
+    CATEGORIES,
+    UNDECIDED,
+    canonical_env,
+    is_ultraviewer_id,
+    is_valid_pcname,
+)
 
 
 @dataclass(frozen=True)
 class Decision:
     """页面上对一张图的决定。两个下拉都默认空着，空着就是没点。
 
-    `pcname` / `ultraviewer_id` 是页面上带出来的那一份：合规的图由组头选定机器带出，
-    不合规的图只能靠人填 ID、靠组头选机器补 PCNAME。空着就用文件名解析出的——
-    文件名不合规时没有可回退的值，缺什么就挡什么。
+    `pcname` / `ultraviewer_id` 是页面上带出来的那一份：组头选定的机器、本卡手改的
+    PCNAME、手输的 ID，三处都从这里下来。空着就用文件名解析出的——文件名不合规时
+    没有可回退的值，缺什么就挡什么。手改的 PCNAME 会原样进文件名，所以它也得过
+    「合法 PCNAME」那一关。
     """
 
     filename: str
@@ -129,6 +136,9 @@ def _problems_of(category: str, env: str, pcname: str, ultraviewer_id: str) -> l
     文件名不合规的图在这里补齐：缺 ID、缺 PCNAME 各算一条，人补哪一条就少哪一条。
     合规的图通常从文件名就能补齐这两项，所以只会因类别或 ENV 被挡；组头选了机器时，
     这两项改由登记带出，同样不会缺。
+
+    手改的 PCNAME 会原样进文件名，所以填进来的非法字符也算一条挡住的理由——
+    这一关不能只靠页面标红。
     """
     problems: list[str] = []
     if not category or category == UNDECIDED:
@@ -139,6 +149,9 @@ def _problems_of(category: str, env: str, pcname: str, ultraviewer_id: str) -> l
         problems.append("ENV 未选")
     if not pcname:
         problems.append("PCNAME 未定")
+    elif not is_valid_pcname(pcname):
+        # 页面会标红，但绕过页面直接打 API 也得挡住：名字会原样进文件名。
+        problems.append(f"PCNAME 含非法字符：{pcname}")
     if not ultraviewer_id:
         problems.append("Ultraviewer ID 未填")
     elif not is_ultraviewer_id(ultraviewer_id):

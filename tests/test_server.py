@@ -169,6 +169,76 @@ class NonCompliantCompletionTest(ServerTestCase):
         self.assertEqual([item["filename"] for item in landed["blocked"]], [self.BROKEN])
 
 
+class HandTypedPcnameTest(ServerTestCase):
+    """卡片上的 PCNAME 可以就地手改：预览名与落盘名都用这个值，回退规则照旧。"""
+
+    def body(self, pcname: str, **overrides) -> dict:
+        decision = {
+            "filename": NAMES[0],
+            "env": "Server",
+            "category": "Spec",
+            "pcname": pcname,
+            "ultraviewer_id": "",
+        }
+        decision.update(overrides)
+        return {"directory": str(self.source), "decisions": [decision]}
+
+    def test_a_hand_typed_pcname_is_the_name_that_previews_and_lands(self):
+        self.make_source(NAMES[0])
+        body = self.body("BB")
+
+        preview = self.post("/api/preview", body)
+        landed = self.post("/api/rename", body)
+
+        self.assertEqual(
+            preview["ready"], [{"source": NAMES[0], "target": "(Server)82331647_BB-Spec.png"}]
+        )
+        self.assertEqual(landed["rows"][0]["target"], preview["ready"][0]["target"])
+        self.assertTrue((self.source / "Renamed" / "(Server)82331647_BB-Spec.png").is_file())
+
+    def test_surrounding_spaces_are_trimmed_before_the_name_is_built(self):
+        self.make_source(NAMES[0])
+        body = self.body("  BB  ")
+
+        preview = self.post("/api/preview", body)
+        self.post("/api/rename", body)
+
+        self.assertEqual(preview["ready"][0]["target"], "(Server)82331647_BB-Spec.png")
+        self.assertEqual(
+            sorted(path.name for path in (self.source / "Renamed").glob("*.png")),
+            ["(Server)82331647_BB-Spec.png"],
+        )
+
+    def test_an_empty_pcname_falls_back_to_the_one_in_the_filename(self):
+        """清空输入框等于「我没改过」：交回文件名解析出的值，不算未定。"""
+        self.make_source(NAMES[0])
+
+        preview = self.post("/api/preview", self.body(""))
+
+        self.assertEqual(preview["ready"][0]["target"], "(Server)82331647_TCSB2-Spec.png")
+
+    def test_a_hand_typed_pcname_with_illegal_characters_is_refused_at_the_api_too(self):
+        """页面会标红，但绕过页面直接打 API 也得挡住，不然会落出打不开的文件名。"""
+        self.make_source(NAMES[0])
+        body = self.body("TCSB/2")
+
+        preview = self.post("/api/preview", body)
+        landed = self.post("/api/rename", body)
+
+        self.assertEqual(preview["ready"], [])
+        self.assertEqual(landed["copied"], 0)
+        self.assertIn("PCNAME 含非法字符：TCSB/2", landed["blocked"][0]["reason"])
+
+
+class ConfigPayloadTest(ServerTestCase):
+    def test_the_page_is_told_which_characters_a_pcname_may_not_contain(self):
+        """红框与服务端拦截共用同一条判据：字符集由服务端下发，页面不另抄一份。"""
+        with urllib.request.urlopen(self.base + "/api/config") as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        self.assertEqual(sorted(payload["pcname_forbidden"]), sorted('\\/:*?"<>|'))
+
+
 class PreviewGuardTest(ServerTestCase):
     def test_requests_that_are_not_json_from_this_page_are_refused(self):
         self.make_source(NAMES[0])
